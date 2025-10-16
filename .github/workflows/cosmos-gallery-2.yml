@@ -1,4 +1,4 @@
-name: Cosmos Gallery 3 -> gallery.json
+name: Cosmos Gallery 2 -> gallery.json
 
 on:
   workflow_dispatch:
