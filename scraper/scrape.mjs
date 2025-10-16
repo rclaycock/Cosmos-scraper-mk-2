@@ -12,14 +12,49 @@ const OUT_FILE = process.env.OUT_FILE
   ? path.resolve(process.env.OUT_FILE)
   : path.join(OUT_DIR, "gallery.json");
 
-// Tunables via env (safe defaults)
-const MAX_SCROLLS   = Number(process.env.MAX_SCROLLS   || 160);   // max “screens”
-const WAIT_BETWEEN  = Number(process.env.WAIT_BETWEEN  || 1000);  // ms between scrolls
-const FIRST_IDLE    = Number(process.env.FIRST_IDLE    || 9000);  // initial wait
-const STABLE_CHECKS = Number(process.env.STABLE_CHECKS || 6);     // stop after N stable heights
+// Tunables via env
+const MAX_SCROLLS   = Number(process.env.MAX_SCROLLS   || 200);
+const WAIT_BETWEEN  = Number(process.env.WAIT_BETWEEN  || 1000);
+const FIRST_IDLE    = Number(process.env.FIRST_IDLE    || 9000);
+const STABLE_CHECKS = Number(process.env.STABLE_CHECKS || 6);
 
-const MEDIA_RE = /\.(jpe?g|png|webp|gif|avif|mp4|webm|m4v|mov)(\?|$)/i;
-const CDN_HOST_HINTS = ["cdn.cosmos.so", "cosmos.so", "images.prismic", "cloudfront", "googleusercontent"];
+// Media patterns and hosts
+const MEDIA_EXT_RE = /\.(jpe?g|png|webp|gif|avif|mp4|webm|m4v|mov|heic)(\?|$)/i;
+const VIDEO_EXT_RE = /\.(mp4|webm|m4v|mov)(\?|$)/i;
+const CDN_HOST_ALLOW = ["cdn.cosmos.so", "files.cosmos.so", "images.prismic", "cloudfront", "googleusercontent"];
+
+// Exclude obvious non-gallery assets (avatars, favicons, Next.js bundles, base64, etc)
+function isExcluded(src) {
+  return (
+    !src ||
+    src.startsWith("data:") ||
+    src.includes("default-avatars") ||
+    src.includes("/_next/") ||
+    src.includes("favicon") ||
+    src.includes("cosmos.so/api/avatar")
+  );
+}
+
+function normaliseURL(src, base = COSMOS_URL) {
+  try {
+    const u = new URL(src, base);
+    return u.origin + u.pathname; // strip query params to dedupe CDN variants
+  } catch {
+    return null;
+  }
+}
+
+function allowByHostAndExt(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    const hostOk = CDN_HOST_ALLOW.some(h => u.host.includes(h));
+    const extOk  = MEDIA_EXT_RE.test(u.pathname);
+    // Prefer both true, but if ext matches we keep it even on other CDNs
+    return extOk || hostOk;
+  } catch {
+    return false;
+  }
+}
 
 function uniqBySrc(items) {
   const seen = new Set();
@@ -41,43 +76,43 @@ function uniqBySrc(items) {
   });
   const page = await context.newPage();
 
-  // Make every observer think elements are visible (helps lazy loaders)
+  // Force lazy loaders to treat elements as visible
   await page.addInitScript(() => {
-    const orig = window.IntersectionObserver;
+    const OrigIO = window.IntersectionObserver;
     window.IntersectionObserver = class FakeIO {
-      constructor(cb, opts) {
-        this._cb = cb; this._opts = opts;
-      }
-      observe(el) { this._cb([{ isIntersecting: true, target: el, intersectionRatio: 1 }]); }
+      constructor(cb, opts){ this._cb = cb; this._opts = opts; }
+      observe(el){ try { this._cb([{ isIntersecting: true, target: el, intersectionRatio: 1 }]); } catch {} }
       unobserve() {}
       disconnect() {}
-      takeRecords() { return []; }
+      takeRecords(){ return []; }
     };
     window.IntersectionObserverEntry = function(){};
-    // Fallback for some libs checking for existence
     window.__IOPatched = true;
   });
 
-  // Collect URLs we see on the network as well
-  const netSet = new Set();
+  // Capture media-like URLs seen on the network
+  const netFound = new Set();
   page.on("response", async (res) => {
     try {
-      const url = new URL(res.url());
-      // media files directly
-      if (MEDIA_RE.test(url.pathname)) netSet.add(url.origin + url.pathname);
+      const url = res.url();
+      const norm = normaliseURL(url);
+      if (!norm || isExcluded(norm)) return;
 
-      // parse JSON bodies for embedded media links
-      const ct = res.headers()["content-type"] || "";
+      // Direct media files
+      if (MEDIA_EXT_RE.test(norm)) {
+        netFound.add(norm);
+        return;
+      }
+
+      // Parse JSON responses for embedded URLs
+      const ct = (res.headers()["content-type"] || "").toLowerCase();
       if (ct.includes("application/json")) {
         const text = await res.text().catch(() => "");
-        // quick-and-dirty crawl for URLs
-        const urls = text.match(/https?:\/\/[^\s"']+/g) || [];
+        const urls = text.match(/https?:\/\/[^\s"'\\)]+/g) || [];
         for (const u of urls) {
-          try {
-            const uu = new URL(u);
-            if (MEDIA_RE.test(uu.pathname)) netSet.add(uu.origin + uu.pathname);
-            if (CDN_HOST_HINTS.some(h => uu.host.includes(h))) netSet.add(uu.origin + uu.pathname);
-          } catch {}
+          const n = normaliseURL(u);
+          if (!n || isExcluded(n)) continue;
+          if (allowByHostAndExt(n)) netFound.add(n);
         }
       }
     } catch {}
@@ -95,7 +130,7 @@ function uniqBySrc(items) {
       // Images
       document.querySelectorAll("img").forEach(img => {
         const src = img.currentSrc || img.src || img.getAttribute("src");
-        if (src) out.push({ type: "image", src });
+        if (src) out.push({ type: "image", src, poster: null });
       });
       // Videos
       document.querySelectorAll("video").forEach(v => {
@@ -106,18 +141,22 @@ function uniqBySrc(items) {
     });
 
     for (const it of batch) {
-      try {
-        const u = new URL(it.src, COSMOS_URL);
-        const src = u.origin + u.pathname;
-        if (MEDIA_RE.test(u.pathname) || CDN_HOST_HINTS.some(h => u.host.includes(h))) {
-          found.set(src, { type: it.type, src, poster: it.poster || null });
-        }
-      } catch {
-        // ignore malformed
-      }
+      if (isExcluded(it.src)) continue;
+      const norm = normaliseURL(it.src);
+      if (!norm) continue;
+      if (!allowByHostAndExt(norm)) continue;
+
+      const isVideo = VIDEO_EXT_RE.test(norm);
+      found.set(norm, { type: isVideo ? "video" : "image", src: norm, poster: it.poster || null });
     }
-    // Merge network-discovered too
-    for (const u of netSet) found.set(u, { type: MEDIA_RE.test(u) && /\.(mp4|webm|m4v|mov)$/i.test(u) ? "video" : "image", src: u });
+
+    // Merge any network-discovered URLs too
+    for (const u of netFound) {
+      if (isExcluded(u)) continue;
+      if (!allowByHostAndExt(u)) continue;
+      const isVideo = VIDEO_EXT_RE.test(u);
+      if (!found.has(u)) found.set(u, { type: isVideo ? "video" : "image", src: u, poster: null });
+    }
   }
 
   console.log("Scrolling + collecting…");
@@ -126,28 +165,34 @@ function uniqBySrc(items) {
 
   for (let i = 0; i < MAX_SCROLLS; i++) {
     await collectFromDOM();
-    await page.evaluate(() => window.scrollBy(0, window.innerHeight * 0.85));
+
+    // Simulate user scroll
+    await page.mouse.wheel(0, Math.floor((await page.evaluate(() => window.innerHeight)) * 0.85));
     await page.waitForTimeout(WAIT_BETWEEN);
 
-    // growth check
+    // Stop when page stops growing for a bit
     const h = await page.evaluate(() => document.body.scrollHeight);
     if (h === lastH) {
       stable++;
-      if (stable >= STABLE_CHECKS) break;  // page stopped growing
+      if (stable >= STABLE_CHECKS) break;
     } else {
       stable = 0;
       lastH = h;
     }
+
     if ((i + 1) % 10 === 0) console.log(`…scroll ${i + 1}, items so far: ${found.size}`);
   }
 
-  // final sweep
+  // Final sweep
   await collectFromDOM();
 
   await browser.close();
 
   const items = uniqBySrc([...found.values()]);
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  fs.writeFileSync(OUT_FILE, JSON.stringify({ ok: true, source: COSMOS_URL, count: items.length, items }, null, 2));
+  fs.writeFileSync(
+    OUT_FILE,
+    JSON.stringify({ ok: true, source: COSMOS_URL, count: items.length, items }, null, 2)
+  );
   console.log(`✅ Saved ${items.length} items → ${OUT_FILE}`);
 })();
