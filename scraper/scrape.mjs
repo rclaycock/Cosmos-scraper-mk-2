@@ -30,7 +30,7 @@ function normaliseURL(src, base = COSMOS_URL) {
   }
 }
 
-function allowByHostAndExt(url) {
+function allowByExt(url) {
   try {
     const u = new URL(url);
     return MEDIA_EXT_RE.test(u.pathname);
@@ -60,74 +60,51 @@ function uniq(items) {
   const page = await context.newPage();
 
   console.log(`🔍 Visiting ${COSMOS_URL}`);
-  await page.goto(COSMOS_URL, { waitUntil: "domcontentloaded", timeout: 120000 });
+  await page.goto(COSMOS_URL, { waitUntil: "networkidle", timeout: 120000 });
   await page.waitForTimeout(FIRST_IDLE);
 
-  // ---- 1️⃣ Try internal Cosmos JSON first (true order) ----
-  const internalItems = await page.evaluate(() => {
-    const script = document.querySelector('script#__NEXT_DATA__');
-    if (!script) return null;
+  // ---- Step 1: Try internal JSON for videos (if present) ----
+  const jsonMedia = await page.evaluate(() => {
+    const s = document.querySelector("script#__NEXT_DATA__");
+    if (!s) return [];
     try {
-      const json = JSON.parse(script.textContent);
-      const items =
-        json?.props?.pageProps?.collection?.items ||
-        json?.props?.pageProps?.content?.items ||
+      const j = JSON.parse(s.textContent);
+      const blocks =
+        j?.props?.pageProps?.collection?.items ||
+        j?.props?.pageProps?.content?.items ||
+        j?.props?.pageProps?.blocks ||
         [];
-      const SKIP = /cdn\.cosmos\.so\/default-avatars\//i;
-      const EXT = /\.(jpe?g|png|webp|gif|avif|mp4|webm|m4v|mov|heic)(\?|$)/i;
-
-      return items
-        .map(it => {
-          const src =
-            it.image?.url ||
-            it.video?.url ||
-            it.asset?.url ||
-            it.url ||
-            it.href ||
-            "";
-          if (!src || SKIP.test(src) || !EXT.test(src)) return null;
-
-          const isVideo = /\.(mp4|webm|m4v|mov)(\?|$)/i.test(src);
-          const w = it.image?.width || it.video?.width || 0;
-          const h = it.image?.height || it.video?.height || 0;
-          return { type: isVideo ? "video" : "image", src, width: w, height: h };
-        })
-        .filter(Boolean);
+      const vids = [];
+      const EXT = /\.(mp4|webm|m4v|mov)(\?|$)/i;
+      for (const b of blocks) {
+        const url =
+          b?.video?.url || b?.asset?.url || b?.image?.url || b?.url || b?.href;
+        if (!url || !EXT.test(url)) continue;
+        vids.push({
+          type: "video",
+          src: url,
+          width: b?.video?.width || 0,
+          height: b?.video?.height || 0,
+        });
+      }
+      return vids;
     } catch {
-      return null;
+      return [];
     }
   });
 
-  if (internalItems && internalItems.length) {
-    console.log(`✅ Found internal JSON with ${internalItems.length} items`);
-    fs.mkdirSync(OUT_DIR, { recursive: true });
-    fs.writeFileSync(
-      OUT_FILE,
-      JSON.stringify(
-        { ok: true, source: COSMOS_URL, count: internalItems.length, items: uniq(internalItems) },
-        null,
-        2
-      )
-    );
-    await browser.close();
-    console.log(`💾 Saved to ${OUT_FILE}`);
-    return;
-  }
+  console.log(`🧩 Found ${jsonMedia.length} videos in internal JSON`);
 
-  // ---- 2️⃣ Fallback: Scroll and collect from DOM (approximate order) ----
-  console.log("⚠️ No internal JSON found, falling back to DOM scroll method…");
-
+  // ---- Step 2: Scroll + collect all DOM assets (images + videos) ----
   const found = new Map();
 
   async function collectFromDOM() {
     const batch = await page.evaluate(() => {
+      const results = [];
       const SKIP = /cdn\.cosmos\.so\/default-avatars\//i;
       const EXT = /\.(jpe?g|png|webp|gif|avif|mp4|webm|m4v|mov|heic)(\?|$)/i;
 
-      const results = [];
-      const root = document.querySelector('[data-testid="masonry"]') || document.body;
-
-      root.querySelectorAll("img,video,iframe").forEach(el => {
+      document.querySelectorAll("img,video").forEach(el => {
         const src =
           el.currentSrc ||
           el.src ||
@@ -135,19 +112,23 @@ function uniq(items) {
           el.querySelector("source")?.src ||
           "";
         if (!src || SKIP.test(src) || !EXT.test(src)) return;
+
         const rect = el.getBoundingClientRect();
         const w = el.naturalWidth || el.videoWidth || 0;
         const h = el.naturalHeight || el.videoHeight || 0;
-        const type = /\.(mp4|webm|m4v|mov)(\?|$)/i.test(src) ? "video" : "image";
+        const type = /\.(mp4|webm|m4v|mov)(\?|$)/i.test(src)
+          ? "video"
+          : "image";
         results.push({ type, src, width: w, height: h, top: rect.top + window.scrollY });
       });
+
       return results;
     });
 
     for (const it of batch) {
       const n = normaliseURL(it.src);
-      if (!n || !allowByHostAndExt(n) || SKIP_RE.test(n)) continue;
-      found.set(n, { type: it.type, src: n, width: it.width, height: it.height, top: it.top });
+      if (!n || SKIP_RE.test(n) || !allowByExt(n)) continue;
+      found.set(n, { ...it, src: n });
     }
   }
 
@@ -170,14 +151,18 @@ function uniq(items) {
   await collectFromDOM();
   await browser.close();
 
-  const sorted = Array.from(found.values()).sort((a, b) => a.top - b.top);
-  const deduped = uniq(sorted);
+  const domItems = Array.from(found.values()).sort((a, b) => a.top - b.top);
+  const merged = uniq([...domItems, ...jsonMedia]);
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(
     OUT_FILE,
-    JSON.stringify({ ok: true, source: COSMOS_URL, count: deduped.length, items: deduped }, null, 2)
+    JSON.stringify(
+      { ok: true, source: COSMOS_URL, count: merged.length, items: merged },
+      null,
+      2
+    )
   );
 
-  console.log(`💾 Saved ${deduped.length} items → ${OUT_FILE}`);
+  console.log(`💾 Saved ${merged.length} items → ${OUT_FILE}`);
 })();
