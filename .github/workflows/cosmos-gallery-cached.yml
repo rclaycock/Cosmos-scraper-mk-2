@@ -1,4 +1,4 @@
-name: Cosmos Gallery cached 2 -> gallery.json
+name: Cosmos Gallery cached 4 -> gallery.json
 
 on:
   workflow_dispatch:
@@ -22,8 +22,8 @@ jobs:
       WAIT_BETWEEN: 1000
       FIRST_IDLE: 9000
       STABLE_CHECKS: 6
-      # Put Playwright browsers where we can cache them
-      PLAYWRIGHT_BROWSERS_PATH: "~/.cache/ms-playwright"
+      # Use a cacheable, absolute path (no ~)
+      PLAYWRIGHT_BROWSERS_PATH: $HOME/.cache/ms-playwright
 
     steps:
       - name: Checkout repository (force latest main)
@@ -39,24 +39,29 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            **/node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            node-modules-${{ runner.os }}-
+      - name: Prepare cache dirs
+        run: |
+          mkdir -p "$HOME/.cache/ms-playwright"
+          mkdir -p "$HOME/.cache/playwright"
+          mkdir -p node_modules
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/ms-playwright
-            ~/.cache/playwright
+            $HOME/.cache/ms-playwright
+            $HOME/.cache/playwright
           key: ms-playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ms-playwright-${{ runner.os }}-
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            node-modules-${{ runner.os }}-
 
       - name: Install dependencies (reproducible)
         run: npm ci
@@ -78,6 +83,7 @@ jobs:
           done
 
       - name: Normalize + dedupe (prefer Mux → high.mp4)
+        shell: bash
         run: |
           node - <<'NODE'
           const fs = require('fs');
@@ -115,7 +121,7 @@ jobs:
               if (u.host.toLowerCase() !== MUX_HOST) return url;
               const seg = u.pathname.split('/').filter(Boolean);
               if (!seg.length) return url;
-              seg[1] = 'high.mp4'; // force best mp4 rendition
+              seg[1] = 'high.mp4';
               u.pathname = '/' + seg.join('/');
               u.search = '';
               u.hash = '';
@@ -138,7 +144,6 @@ jobs:
             const seen = new Set();
             const out  = [];
 
-            // first pass: normalize, mux upgrade, build keys
             for (const rawItem of list) {
               const item = { ...rawItem };
 
@@ -146,11 +151,9 @@ jobs:
               if (!src) continue;
               if (SKIP_AVATAR.test(src)) continue;
 
-              // normalize & upgrade mux
               const n0 = normUrl(src);
               if (!n0) continue;
-              const isMux0 = (new URL(n0)).host.toLowerCase() === MUX_HOST;
-              if (isMux0) src = upgradeMux(n0); else src = n0;
+              src = (new URL(n0)).host.toLowerCase() === MUX_HOST ? upgradeMux(n0) : n0;
 
               const nsrc = normUrl(src);
               if (!nsrc) continue;
@@ -179,7 +182,6 @@ jobs:
               out.push(item);
             }
 
-            // second pass: if any Mux videos exist, drop Cosmos-hosted .mp4s
             const hasMux = out.some(it => it.type === 'video' && (new URL(it.src)).host.toLowerCase() === MUX_HOST);
             let final = out;
             if (hasMux) {
@@ -191,7 +193,6 @@ jobs:
               });
             }
 
-            // write back
             let finalObj = data;
             if (Array.isArray(data)) finalObj = final;
             else if (Array.isArray(data.items)) finalObj = { ...data, items: final, count: final.length };
