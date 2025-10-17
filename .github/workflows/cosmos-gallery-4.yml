@@ -1,0 +1,141 @@
+name: Cosmos Gallery 4 -> gallery.json
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"   # hourly
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    env:
+      # Comma-separated list of Cosmos gallery URLs to scrape
+      URLS: >
+        https://www.cosmos.so/rlphoto/swim,
+        https://www.cosmos.so/rlphoto/studio-tests,
+        https://www.cosmos.so/rlphoto/studio-test-feminine,
+        https://www.cosmos.so/rlphoto/swim-resort,
+        https://www.cosmos.so/rlphoto/location-tests
+      # Scraper tunables
+      MAX_SCROLLS: 200
+      WAIT_BETWEEN: 1000
+      FIRST_IDLE: 9000
+      STABLE_CHECKS: 6
+
+    steps:
+      - name: Checkout repository (force latest main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          clean: true
+
+      - name: Verify commit + scraper snippet
+        run: |
+          echo "Commit: $GITHUB_SHA"
+          git log -1 --oneline || true
+          echo "First lines of scraper/scrape.mjs:"
+          nl -ba scraper/scrape.mjs | sed -n '1,25p' || true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Scrape all Cosmos pages
+        run: |
+          IFS=',' read -ra arr <<< "${URLS}"
+          mkdir -p public
+          for u in "${arr[@]}"; do
+            u=$(echo "$u" | xargs)
+            slug=$(basename "$u")
+            echo "Scraping $u -> public/${slug}.json"
+            COSMOS_URL="$u" OUT_FILE="public/${slug}.json" \
+            MAX_SCROLLS="${MAX_SCROLLS}" WAIT_BETWEEN="${WAIT_BETWEEN}" FIRST_IDLE="${FIRST_IDLE}" STABLE_CHECKS="${STABLE_CHECKS}" \
+            npm run scrape
+          done
+
+      - name: Deduplicate JSON outputs
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const PUB = path.resolve(process.cwd(), 'public');
+          if (!fs.existsSync(PUB)) process.exit(0);
+
+          const files = fs.readdirSync(PUB).filter(f => f.endsWith('.json'));
+          const SKIP_AVATAR = /cdn\.cosmos\.so\/default-avatars\//i;
+
+          const norm = (url) => {
+            try {
+              const u = new URL(url);
+              // strip query + hash; lower-case host; keep extension path
+              return `${u.protocol}//${u.host.toLowerCase()}${u.pathname}`;
+            } catch { return null; }
+          };
+
+          for (const file of files) {
+            const full = path.join(PUB, file);
+            let raw = fs.readFileSync(full, 'utf8');
+            let data;
+            try { data = JSON.parse(raw); } catch { console.log(`! Skip (bad JSON): ${file}`); continue; }
+
+            const list = Array.isArray(data) ? data
+                        : Array.isArray(data.items) ? data.items
+                        : [];
+
+            const seen = new Set();
+            const out = [];
+            let removed = 0;
+
+            for (const it of list) {
+              const src0 = it?.src || it?.url || it?.image || it?.href;
+              if (!src0) { removed++; continue; }
+              if (SKIP_AVATAR.test(src0)) { removed++; continue; }
+
+              const src = norm(src0);
+              if (!src) { removed++; continue; }
+
+              const type = (it.type || (/\.(mp4|webm|m4v|mov)(\?|$)/i.test(src0) ? 'video' : 'image')).toLowerCase();
+              const key = `${type}:${src}`;
+
+              if (seen.has(key)) { removed++; continue; }
+              seen.add(key);
+
+              // write back normalized src, preserve original fields and order
+              const outItem = { ...it, type, src };
+              // optional: normalize poster too
+              if (outItem.poster) {
+                const p = norm(outItem.poster);
+                if (p) outItem.poster = p;
+              }
+              out.push(outItem);
+            }
+
+            // write back in the same shape as input
+            let finalObj = data;
+            if (Array.isArray(data)) finalObj = out;
+            else if (Array.isArray(data.items)) finalObj = { ...data, items: out, count: out.length };
+            else finalObj = out;
+
+            fs.writeFileSync(full, JSON.stringify(finalObj, null, 2));
+            console.log(`✔ ${file}: ${list.length} -> ${out.length} (removed ${removed})`);
+          }
+          NODE
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: gh-pages
