@@ -1,4 +1,4 @@
-name: Cosmos Gallery cached 4 -> gallery.json
+name: Cosmos Gallery cached 4-> gallery.json
 
 on:
   workflow_dispatch:
