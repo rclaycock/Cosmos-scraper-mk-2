@@ -1,4 +1,4 @@
-name: Cosmos Gallery cached 4-> gallery.json
+name: Cosmos Gallery cached 5 -> gallery.json
 
 on:
   workflow_dispatch:
@@ -22,8 +22,7 @@ jobs:
       WAIT_BETWEEN: 1000
       FIRST_IDLE: 9000
       STABLE_CHECKS: 6
-      # Use a cacheable, absolute path (no ~)
-      PLAYWRIGHT_BROWSERS_PATH: $HOME/.cache/ms-playwright
+      PLAYWRIGHT_BROWSERS_PATH: "~/.cache/ms-playwright"
 
     steps:
       - name: Checkout repository (force latest main)
@@ -41,16 +40,16 @@ jobs:
 
       - name: Prepare cache dirs
         run: |
-          mkdir -p "$HOME/.cache/ms-playwright"
-          mkdir -p "$HOME/.cache/playwright"
+          mkdir -p ~/.cache/ms-playwright
+          mkdir -p ~/.cache/playwright
           mkdir -p node_modules
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
           path: |
-            $HOME/.cache/ms-playwright
-            $HOME/.cache/playwright
+            /home/runner/.cache/ms-playwright
+            /home/runner/.cache/playwright
           key: ms-playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ms-playwright-${{ runner.os }}-
@@ -82,8 +81,8 @@ jobs:
             npm run scrape
           done
 
-      - name: Normalize + dedupe (prefer Mux → high.mp4)
-        shell: bash
+      # 🔧 Only upgrade Mux low→high and dedupe exact URLs. Do NOT drop Cosmos MP4s.
+      - name: Normalize + dedupe (Mux low→high, no host preference)
         run: |
           node - <<'NODE'
           const fs = require('fs');
@@ -96,7 +95,6 @@ jobs:
 
           const SKIP_AVATAR = /cdn\.cosmos\.so\/default-avatars\//i;
           const MUX_HOST = 'stream.mux.com';
-          const DROP_IF_MUX_HOSTS = [/^cdn\.cosmos\.so$/i, /^files\.cosmos\.so$/i];
 
           const normUrl = (url) => {
             try {
@@ -105,31 +103,23 @@ jobs:
             } catch { return null; }
           };
 
-          const muxKey = (url) => {
-            try {
-              const u = new URL(url);
-              if (u.host.toLowerCase() !== MUX_HOST) return null;
-              const seg = u.pathname.split('/').filter(Boolean);
-              const playbackId = seg[0] || null;
-              return playbackId ? `video:mux:${playbackId}` : null;
-            } catch { return null; }
-          };
-
           const upgradeMux = (url) => {
             try {
               const u = new URL(url);
               if (u.host.toLowerCase() !== MUX_HOST) return url;
-              const seg = u.pathname.split('/').filter(Boolean);
-              if (!seg.length) return url;
-              seg[1] = 'high.mp4';
-              u.pathname = '/' + seg.join('/');
-              u.search = '';
-              u.hash = '';
+              const parts = u.pathname.split('/').filter(Boolean);
+              if (parts.length >= 2) {
+                parts[1] = 'high.mp4'; // force high.mp4
+                u.pathname = '/' + parts.join('/');
+                u.search = '';
+                u.hash = '';
+              }
               return u.toString();
             } catch { return url; }
           };
 
-          const isVideoExt = (u) => /\.((mp4|webm|m4v|mov))$/i.test(new URL(u).pathname);
+          const detectType = (url, fallback='image') =>
+            /\.(mp4|webm|m4v|mov)(\?|$)/i.test(url) ? 'video' : fallback;
 
           for (const file of files) {
             const full = path.join(PUB, file);
@@ -144,35 +134,30 @@ jobs:
             const seen = new Set();
             const out  = [];
 
-            for (const rawItem of list) {
-              const item = { ...rawItem };
+            for (const raw of list) {
+              const item = { ...raw };
 
+              // choose src field
               let src = item.src || item.url || item.image || item.href;
               if (!src) continue;
               if (SKIP_AVATAR.test(src)) continue;
 
-              const n0 = normUrl(src);
-              if (!n0) continue;
-              src = (new URL(n0)).host.toLowerCase() === MUX_HOST ? upgradeMux(n0) : n0;
-
+              // upgrade mux low→high first, then normalize
+              src = upgradeMux(src);
               const nsrc = normUrl(src);
               if (!nsrc) continue;
 
+              // normalize poster if present (no special handling)
               if (item.poster) {
                 const p = normUrl(item.poster);
                 if (p) item.poster = p;
               }
 
-              const type = (item.type || (/\.(mp4|webm|m4v|mov)(\?|$)/i.test(nsrc) ? 'video' : 'image')).toLowerCase();
+              // type detection
+              const type = (item.type || detectType(nsrc, 'image')).toLowerCase();
 
-              let key;
-              if (type === 'video') {
-                const mk = muxKey(nsrc);
-                key = mk ? mk : `video:url:${nsrc}`;
-              } else {
-                key = `image:url:${nsrc}`;
-              }
-
+              // dedupe by normalized URL + type (keeps first seen)
+              const key = `${type}:${nsrc}`;
               if (seen.has(key)) continue;
               seen.add(key);
 
@@ -182,24 +167,14 @@ jobs:
               out.push(item);
             }
 
-            const hasMux = out.some(it => it.type === 'video' && (new URL(it.src)).host.toLowerCase() === MUX_HOST);
-            let final = out;
-            if (hasMux) {
-              final = out.filter(it => {
-                if (it.type !== 'video') return true;
-                const host = (new URL(it.src)).host.toLowerCase();
-                const isDropHost = DROP_IF_MUX_HOSTS.some(rx => rx.test(host));
-                return !(isDropHost && isVideoExt(it.src));
-              });
-            }
-
+            // write back in the same structure we found
             let finalObj = data;
-            if (Array.isArray(data)) finalObj = final;
-            else if (Array.isArray(data.items)) finalObj = { ...data, items: final, count: final.length };
-            else finalObj = final;
+            if (Array.isArray(data)) finalObj = out;
+            else if (Array.isArray(data.items)) finalObj = { ...data, items: out, count: out.length };
+            else finalObj = out;
 
             fs.writeFileSync(full, JSON.stringify(finalObj, null, 2));
-            console.log(`✔ ${file}: ${list.length} → ${final.length} (Mux high, deduped, prefer Mux)`);
+            console.log(`✔ ${file}: ${list.length} → ${out.length} (Mux high, simple dedupe)`);
           }
           NODE
 
