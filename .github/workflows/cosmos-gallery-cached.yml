@@ -1,4 +1,4 @@
-name: Cosmos Gallery 4 -> gallery.json
+name: Cosmos Gallery cached -> gallery.json
 
 on:
   workflow_dispatch:
@@ -12,18 +12,18 @@ jobs:
       contents: write
 
     env:
-      # Comma-separated list of Cosmos gallery URLs to scrape
       URLS: >
         https://www.cosmos.so/rlphoto/swim,
         https://www.cosmos.so/rlphoto/studio-tests,
         https://www.cosmos.so/rlphoto/studio-test-feminine,
         https://www.cosmos.so/rlphoto/swim-resort,
         https://www.cosmos.so/rlphoto/location-tests
-      # Scraper tunables
       MAX_SCROLLS: 200
       WAIT_BETWEEN: 1000
       FIRST_IDLE: 9000
       STABLE_CHECKS: 6
+      # Put Playwright browsers where we can cache them
+      PLAYWRIGHT_BROWSERS_PATH: "~/.cache/ms-playwright"
 
     steps:
       - name: Checkout repository (force latest main)
@@ -33,22 +33,40 @@ jobs:
           fetch-depth: 0
           clean: true
 
-      - name: Verify commit + scraper snippet
-        run: |
-          echo "Commit: $GITHUB_SHA"
-          git log -1 --oneline || true
-          echo "First lines of scraper/scrape.mjs:"
-          nl -ba scraper/scrape.mjs | sed -n '1,25p' || true
-
-      - name: Set up Node.js
+      - name: Use Node.js 20 + cache npm
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
 
-      - name: Install dependencies
+      # (Optional) Cache node_modules for maximum speed
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            node-modules-${{ runner.os }}-
+
+      # Cache Playwright browser binaries (Chromium/FFmpeg)
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ms-playwright-${{ runner.os }}-
+
+      - name: Install dependencies (reproducible)
         run: |
-          npm install
+          npm ci
+
+      # If cache missed, this will download once and then be cached
+      - name: Install Playwright (Chromium + deps)
+        run: |
           npx playwright install --with-deps chromium
 
       - name: Scrape all Cosmos pages
@@ -64,72 +82,43 @@ jobs:
             npm run scrape
           done
 
+      # Deduplicate results to remove doubles
       - name: Deduplicate JSON outputs
         run: |
           node - <<'NODE'
           const fs = require('fs');
           const path = require('path');
-
           const PUB = path.resolve(process.cwd(), 'public');
           if (!fs.existsSync(PUB)) process.exit(0);
-
           const files = fs.readdirSync(PUB).filter(f => f.endsWith('.json'));
           const SKIP_AVATAR = /cdn\.cosmos\.so\/default-avatars\//i;
-
           const norm = (url) => {
-            try {
-              const u = new URL(url);
-              // strip query + hash; lower-case host; keep extension path
+            try { const u = new URL(url);
               return `${u.protocol}//${u.host.toLowerCase()}${u.pathname}`;
             } catch { return null; }
           };
-
           for (const file of files) {
             const full = path.join(PUB, file);
-            let raw = fs.readFileSync(full, 'utf8');
-            let data;
-            try { data = JSON.parse(raw); } catch { console.log(`! Skip (bad JSON): ${file}`); continue; }
-
-            const list = Array.isArray(data) ? data
-                        : Array.isArray(data.items) ? data.items
-                        : [];
-
-            const seen = new Set();
-            const out = [];
-            let removed = 0;
-
+            let data; try { data = JSON.parse(fs.readFileSync(full, 'utf8')); } catch { continue; }
+            const list = Array.isArray(data) ? data : Array.isArray(data.items) ? data.items : [];
+            const seen = new Set(); const out = [];
             for (const it of list) {
-              const src0 = it?.src || it?.url || it?.image || it?.href;
-              if (!src0) { removed++; continue; }
-              if (SKIP_AVATAR.test(src0)) { removed++; continue; }
-
-              const src = norm(src0);
-              if (!src) { removed++; continue; }
-
-              const type = (it.type || (/\.(mp4|webm|m4v|mov)(\?|$)/i.test(src0) ? 'video' : 'image')).toLowerCase();
-              const key = `${type}:${src}`;
-
-              if (seen.has(key)) { removed++; continue; }
+              const raw = it?.src || it?.url || it?.image || it?.href; if (!raw) continue;
+              if (SKIP_AVATAR.test(raw)) continue;
+              const src = norm(raw); if (!src) continue;
+              const type = (it.type || (/\.(mp4|webm|m4v|mov)(\?|$)/i.test(raw) ? 'video' : 'image')).toLowerCase();
+              const key = `${type}:${src}`; if (seen.has(key)) continue;
               seen.add(key);
-
-              // write back normalized src, preserve original fields and order
-              const outItem = { ...it, type, src };
-              // optional: normalize poster too
-              if (outItem.poster) {
-                const p = norm(outItem.poster);
-                if (p) outItem.poster = p;
-              }
-              out.push(outItem);
+              const item = { ...it, type, src };
+              if (item.poster) { const p = norm(item.poster); if (p) item.poster = p; }
+              out.push(item);
             }
-
-            // write back in the same shape as input
             let finalObj = data;
             if (Array.isArray(data)) finalObj = out;
             else if (Array.isArray(data.items)) finalObj = { ...data, items: out, count: out.length };
             else finalObj = out;
-
             fs.writeFileSync(full, JSON.stringify(finalObj, null, 2));
-            console.log(`✔ ${file}: ${list.length} -> ${out.length} (removed ${removed})`);
+            console.log(`✔ ${file}: ${list.length} -> ${out.length}`);
           }
           NODE
 
