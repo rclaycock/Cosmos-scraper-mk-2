@@ -1,0 +1,210 @@
+name: Cosmos Gallery cached 2 -> gallery.json
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"   # hourly
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    env:
+      URLS: >
+        https://www.cosmos.so/rlphoto/swim,
+        https://www.cosmos.so/rlphoto/studio-tests,
+        https://www.cosmos.so/rlphoto/studio-test-feminine,
+        https://www.cosmos.so/rlphoto/swim-resort,
+        https://www.cosmos.so/rlphoto/location-tests
+      MAX_SCROLLS: 200
+      WAIT_BETWEEN: 1000
+      FIRST_IDLE: 9000
+      STABLE_CHECKS: 6
+      # Put Playwright browsers where we can cache them
+      PLAYWRIGHT_BROWSERS_PATH: "~/.cache/ms-playwright"
+
+    steps:
+      - name: Checkout repository (force latest main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          clean: true
+
+      - name: Use Node.js 20 + cache npm
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            node-modules-${{ runner.os }}-
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ms-playwright-${{ runner.os }}-
+
+      - name: Install dependencies (reproducible)
+        run: npm ci
+
+      - name: Install Playwright (Chromium + deps)
+        run: npx playwright install --with-deps chromium
+
+      - name: Scrape all Cosmos pages
+        run: |
+          IFS=',' read -ra arr <<< "${URLS}"
+          mkdir -p public
+          for u in "${arr[@]}"; do
+            u=$(echo "$u" | xargs)
+            slug=$(basename "$u")
+            echo "Scraping $u -> public/${slug}.json"
+            COSMOS_URL="$u" OUT_FILE="public/${slug}.json" \
+            MAX_SCROLLS="${MAX_SCROLLS}" WAIT_BETWEEN="${WAIT_BETWEEN}" FIRST_IDLE="${FIRST_IDLE}" STABLE_CHECKS="${STABLE_CHECKS}" \
+            npm run scrape
+          done
+
+      - name: Normalize + dedupe (prefer Mux → high.mp4)
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const PUB = path.resolve(process.cwd(), 'public');
+          if (!fs.existsSync(PUB)) process.exit(0);
+
+          const files = fs.readdirSync(PUB).filter(f => f.endsWith('.json'));
+
+          const SKIP_AVATAR = /cdn\.cosmos\.so\/default-avatars\//i;
+          const MUX_HOST = 'stream.mux.com';
+          const DROP_IF_MUX_HOSTS = [/^cdn\.cosmos\.so$/i, /^files\.cosmos\.so$/i];
+
+          const normUrl = (url) => {
+            try {
+              const u = new URL(url);
+              return `${u.protocol}//${u.host.toLowerCase()}${u.pathname}`;
+            } catch { return null; }
+          };
+
+          const muxKey = (url) => {
+            try {
+              const u = new URL(url);
+              if (u.host.toLowerCase() !== MUX_HOST) return null;
+              const seg = u.pathname.split('/').filter(Boolean);
+              const playbackId = seg[0] || null;
+              return playbackId ? `video:mux:${playbackId}` : null;
+            } catch { return null; }
+          };
+
+          const upgradeMux = (url) => {
+            try {
+              const u = new URL(url);
+              if (u.host.toLowerCase() !== MUX_HOST) return url;
+              const seg = u.pathname.split('/').filter(Boolean);
+              if (!seg.length) return url;
+              seg[1] = 'high.mp4'; // force best mp4 rendition
+              u.pathname = '/' + seg.join('/');
+              u.search = '';
+              u.hash = '';
+              return u.toString();
+            } catch { return url; }
+          };
+
+          const isVideoExt = (u) => /\.((mp4|webm|m4v|mov))$/i.test(new URL(u).pathname);
+
+          for (const file of files) {
+            const full = path.join(PUB, file);
+            let data;
+            try { data = JSON.parse(fs.readFileSync(full, 'utf8')); }
+            catch { continue; }
+
+            const list = Array.isArray(data) ? data
+                        : Array.isArray(data.items) ? data.items
+                        : [];
+
+            const seen = new Set();
+            const out  = [];
+
+            // first pass: normalize, mux upgrade, build keys
+            for (const rawItem of list) {
+              const item = { ...rawItem };
+
+              let src = item.src || item.url || item.image || item.href;
+              if (!src) continue;
+              if (SKIP_AVATAR.test(src)) continue;
+
+              // normalize & upgrade mux
+              const n0 = normUrl(src);
+              if (!n0) continue;
+              const isMux0 = (new URL(n0)).host.toLowerCase() === MUX_HOST;
+              if (isMux0) src = upgradeMux(n0); else src = n0;
+
+              const nsrc = normUrl(src);
+              if (!nsrc) continue;
+
+              if (item.poster) {
+                const p = normUrl(item.poster);
+                if (p) item.poster = p;
+              }
+
+              const type = (item.type || (/\.(mp4|webm|m4v|mov)(\?|$)/i.test(nsrc) ? 'video' : 'image')).toLowerCase();
+
+              let key;
+              if (type === 'video') {
+                const mk = muxKey(nsrc);
+                key = mk ? mk : `video:url:${nsrc}`;
+              } else {
+                key = `image:url:${nsrc}`;
+              }
+
+              if (seen.has(key)) continue;
+              seen.add(key);
+
+              item.type = type;
+              item.src  = nsrc;
+
+              out.push(item);
+            }
+
+            // second pass: if any Mux videos exist, drop Cosmos-hosted .mp4s
+            const hasMux = out.some(it => it.type === 'video' && (new URL(it.src)).host.toLowerCase() === MUX_HOST);
+            let final = out;
+            if (hasMux) {
+              final = out.filter(it => {
+                if (it.type !== 'video') return true;
+                const host = (new URL(it.src)).host.toLowerCase();
+                const isDropHost = DROP_IF_MUX_HOSTS.some(rx => rx.test(host));
+                return !(isDropHost && isVideoExt(it.src));
+              });
+            }
+
+            // write back
+            let finalObj = data;
+            if (Array.isArray(data)) finalObj = final;
+            else if (Array.isArray(data.items)) finalObj = { ...data, items: final, count: final.length };
+            else finalObj = final;
+
+            fs.writeFileSync(full, JSON.stringify(finalObj, null, 2));
+            console.log(`✔ ${file}: ${list.length} → ${final.length} (Mux high, deduped, prefer Mux)`);
+          }
+          NODE
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: gh-pages
