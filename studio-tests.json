@@ -1,7 +1,7 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/studio-tests",
-  "count": 104,
+  "count": 103,
   "items": [
     {
       "type": "image",
@@ -143,7 +143,7 @@
     },
     {
       "type": "video",
-      "src": "https://stream.mux.com/uz1BO8o4mzt3ZQMj3Mrfdv02tSwbhvqYU164RZn00D4pA/low.mp4",
+      "src": "https://stream.mux.com/uz1BO8o4mzt3ZQMj3Mrfdv02tSwbhvqYU164RZn00D4pA/high.mp4",
       "width": 0,
       "height": 0,
       "poster": "https://cdn.cosmos.so/c3f43e78-1f45-4f0e-863e-4d59d9e3b432"
@@ -222,7 +222,7 @@
     },
     {
       "type": "video",
-      "src": "https://stream.mux.com/e00qOJaI93dEL739Qy4wZ01oA3JMHaxkmCj701NeDdwW4Y/low.mp4",
+      "src": "https://stream.mux.com/e00qOJaI93dEL739Qy4wZ01oA3JMHaxkmCj701NeDdwW4Y/high.mp4",
       "width": 0,
       "height": 0,
       "poster": "https://cdn.cosmos.so/59a340b6-f20b-4882-80d1-758ba07ef2f7"
@@ -349,7 +349,7 @@
     },
     {
       "type": "video",
-      "src": "https://stream.mux.com/TV7OLmbCRdoW9kfq101NpUMeAotlpOuUX4cu23932FT8/low.mp4",
+      "src": "https://stream.mux.com/TV7OLmbCRdoW9kfq101NpUMeAotlpOuUX4cu23932FT8/high.mp4",
       "width": 0,
       "height": 0,
       "poster": "https://cdn.cosmos.so/3fffe3a9-3501-42a1-b92e-62ee4fefae1f"
@@ -609,12 +609,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/3fffe3a9-3501-42a1-b92e-62ee4fefae1f",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "video",
-      "src": "https://cdn.cosmos.so/34ad8cc9-d29a-4d02-a247-74fa8876d860.mp4",
       "width": 0,
       "height": 0
     },
