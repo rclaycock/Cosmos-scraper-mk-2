@@ -1,8 +1,14 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/studio-tests",
-  "count": 123,
+  "count": 124,
   "items": [
+    {
+      "type": "image",
+      "src": "https://cdn.cosmos.so/b326531a-668f-4ea2-976e-08915d3e6e73",
+      "width": 400,
+      "height": 343
+    },
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/1acaa337-7338-43cc-86dc-1eaf1ef054e5",
@@ -626,6 +632,12 @@
     },
     {
       "type": "image",
+      "src": "https://cdn.cosmos.so/a877d81b-fc00-4c84-8334-f487e20c5c10",
+      "width": 0,
+      "height": 0
+    },
+    {
+      "type": "image",
       "src": "https://cdn.cosmos.so/eddd725b-69d0-4435-ac6b-13fe7ee1428f",
       "width": 0,
       "height": 0
@@ -657,12 +669,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/3ab7165b-89fd-4edb-ab60-baa991847612",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/b326531a-668f-4ea2-976e-08915d3e6e73",
       "width": 0,
       "height": 0
     },
