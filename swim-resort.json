@@ -149,6 +149,12 @@
     },
     {
       "type": "image",
+      "src": "https://cdn.cosmos.so/c966e743-50e6-49c5-94df-a9a7a61e3758",
+      "width": 180,
+      "height": 225
+    },
+    {
+      "type": "image",
       "src": "https://cdn.cosmos.so/a956f6cf-33dc-4e8f-80b7-1c736202f161",
       "width": 400,
       "height": 500
@@ -283,12 +289,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/16009945-4148-4723-b653-11e7ba5fda26",
-      "width": 400,
-      "height": 500
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/c966e743-50e6-49c5-94df-a9a7a61e3758",
       "width": 400,
       "height": 500
     },
