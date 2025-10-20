@@ -1,6 +1,13 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/swim",
-  "count": 0,
-  "items": []
+  "count": 1,
+  "items": [
+    {
+      "type": "image",
+      "src": "https://www.cosmos.so/images/noise.webp",
+      "width": 0,
+      "height": 0
+    }
+  ]
 }
