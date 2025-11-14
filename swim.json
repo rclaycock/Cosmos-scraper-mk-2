@@ -706,6 +706,12 @@
       "height": 0
     },
     {
+      "type": "video",
+      "src": "https://stream.mux.com/dznKWa96PZYqM01nkwSbtgLNya8iTJfMAiLLmnyjPTV00/high.mp4",
+      "width": 0,
+      "height": 0
+    },
+    {
       "type": "image",
       "src": "https://cdn.cosmos.so/dcc415a0-cf04-49db-a0dd-6f5c9d488855",
       "width": 0,
@@ -888,12 +894,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/f6e8d7f4-30cb-4ceb-a22a-61f00ec683d0",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "video",
-      "src": "https://stream.mux.com/dznKWa96PZYqM01nkwSbtgLNya8iTJfMAiLLmnyjPTV00/high.mp4",
       "width": 0,
       "height": 0
     },
