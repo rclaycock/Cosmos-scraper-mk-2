@@ -1,319 +1,366 @@
-// scraper/scrape.mjs
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
 import { chromium } from "playwright";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const COSMOS_URL = process.env.COSMOS_URL;
+const OUT_FILE = process.env.OUT_FILE || "public/gallery.json";
 
-const COSMOS_URL = process.env.COSMOS_URL || "https://www.cosmos.so/rlphoto/swim";
-const OUT_DIR = path.resolve(__dirname, "../public");
-const OUT_FILE = process.env.OUT_FILE
-  ? path.resolve(process.env.OUT_FILE)
-  : path.join(OUT_DIR, "gallery.json");
-
-// Tunables via env
 const MAX_SCROLLS = Number(process.env.MAX_SCROLLS || 200);
 const WAIT_BETWEEN = Number(process.env.WAIT_BETWEEN || 1000);
 const FIRST_IDLE = Number(process.env.FIRST_IDLE || 9000);
 const STABLE_CHECKS = Number(process.env.STABLE_CHECKS || 6);
 
-// Media patterns
-const IMG_EXT_RE = /\.(jpe?g|png|webp|gif|avif|heic)(\?|$)/i;
-const VID_EXT_RE = /\.(mp4|webm|m4v|mov)(\?|$)/i;
+const VIEWPORT_W = Number(process.env.VIEWPORT_W || 1400);
+const VIEWPORT_H = Number(process.env.VIEWPORT_H || 900);
 
-// Exclude obvious non-gallery assets
-function isExcluded(src) {
-  return (
-    !src ||
-    src.startsWith("data:") ||
-    src.includes("default-avatars") ||
-    src.includes("/_next/") ||
-    src.includes("favicon") ||
-    src.includes("cosmos.so/api/avatar")
-  );
+// IMPORTANT: your rlp-scripts Cosmos bridge reverses the array before rendering.
+// If you keep that, leave this = 1.
+// If you remove the reverse in rlp-scripts later, set this to 0.
+const OUTPUT_REVERSED_FOR_RLP_SCRIPTS = (process.env.OUTPUT_REVERSED_FOR_RLP_SCRIPTS ?? "1") !== "0";
+
+if (!COSMOS_URL) {
+  console.error("Missing COSMOS_URL env var");
+  process.exit(1);
 }
 
-function normaliseURL(src, base = COSMOS_URL) {
-  try {
-    const u = new URL(src, base);
-    // strip query/fragment to dedupe CDN variants
-    return `${u.protocol}//${u.host}${u.pathname}`;
-  } catch {
-    return null;
-  }
+function ensureDir(fp) {
+  const dir = path.dirname(fp);
+  fs.mkdirSync(dir, { recursive: true });
 }
 
-function muxPlaybackIdFromThumb(urlStr) {
-  try {
-    const u = new URL(urlStr);
-    if (u.host.toLowerCase() !== "image.mux.com") return null;
-    const parts = u.pathname.split("/").filter(Boolean); // [playbackId, "thumbnail.png"]
-    if (parts.length >= 2 && parts[1].toLowerCase() === "thumbnail.png") return parts[0];
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function muxPlaybackIdFromStream(urlStr) {
-  try {
-    const u = new URL(urlStr);
-    if (u.host.toLowerCase() !== "stream.mux.com") return null;
-    const parts = u.pathname.split("/").filter(Boolean); // [playbackId, "low.mp4"]
-    return parts[0] || null;
-  } catch {
-    return null;
-  }
-}
-
-function upgradeMuxToHigh(urlStr) {
-  try {
-    const u = new URL(urlStr);
-    if (u.host.toLowerCase() !== "stream.mux.com") return urlStr;
-    const parts = u.pathname.split("/").filter(Boolean);
-    if (!parts.length) return urlStr;
-    // force /high.mp4
-    parts[1] = "high.mp4";
-    u.pathname = "/" + parts.join("/");
-    u.search = "";
-    u.hash = "";
-    return u.toString();
-  } catch {
-    return urlStr;
-  }
-}
-
-function inferTypeFromUrl(urlStr) {
-  if (VID_EXT_RE.test(urlStr)) return "video";
-  if (IMG_EXT_RE.test(urlStr)) return "image";
-  // default fallback
-  return "image";
-}
-
-(async () => {
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    viewport: { width: 1920, height: 1080 },
-    deviceScaleFactor: 2,
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
+async function main() {
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+    ],
   });
+
+  const context = await browser.newContext({
+    viewport: { width: VIEWPORT_W, height: VIEWPORT_H },
+  });
+
   const page = await context.newPage();
 
-  // Make lazy loaders more eager
-  await page.addInitScript(() => {
-    const OrigIO = window.IntersectionObserver;
-    window.IntersectionObserver = class FakeIO {
-      constructor(cb) { this._cb = cb; }
-      observe(el) {
-        try {
-          this._cb([{ isIntersecting: true, target: el, intersectionRatio: 1 }]);
-        } catch {}
-      }
-      unobserve() {}
-      disconnect() {}
-      takeRecords() { return []; }
-    };
-    window.IntersectionObserverEntry = function () {};
-    window.__IOPatched = true;
-  });
-
-  console.log(`Navigating to ${COSMOS_URL}`);
-  await page.goto(COSMOS_URL, { waitUntil: "domcontentloaded", timeout: 120000 });
-  await page.waitForTimeout(FIRST_IDLE);
-
-  // Ordered list of card keys (first-seen order)
-  const order = [];
-  // Map of cardKey -> final item
-  const byCard = new Map();
-  // Dedupe across truly identical media (safety)
-  const seenMediaKeys = new Set();
-
-  function mediaKey(item) {
-    // Prefer stable video key for mux
-    if (item.type === "video") {
-      const pid = muxPlaybackIdFromStream(item.src);
-      if (pid) return `video:mux:${pid}`;
+  try {
+    await page.goto(COSMOS_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+    try {
+      await page.waitForLoadState("networkidle", { timeout: FIRST_IDLE });
+    } catch {
+      // networkidle is often noisy on Next.js sites, ignore
     }
-    return `${item.type}:${item.src}`;
-  }
 
-  async function collectFromDOM() {
-    const batch = await page.evaluate(() => {
-      function pickBestFromSrcset(img) {
-        try {
-          if (img.currentSrc) return img.currentSrc;
-          const ss = img.getAttribute("srcset");
-          if (!ss) return img.getAttribute("src") || "";
-          const parts = ss.split(",").map(s => s.trim());
-          const candidates = parts
-            .map(p => {
-              const [url, size] = p.split(/\s+/);
-              const w = size?.endsWith("w") ? parseInt(size, 10) : 0;
-              return { url, w: Number.isFinite(w) ? w : 0 };
-            })
-            .sort((a, b) => b.w - a.w);
-          return candidates[0]?.url || img.getAttribute("src") || "";
-        } catch {
-          return img.getAttribute("src") || "";
-        }
+    // Scroll until listitem count stabilises
+    let lastCount = 0;
+    let stable = 0;
+
+    for (let i = 0; i < MAX_SCROLLS; i++) {
+      const count = await page.locator('[role="listitem"]').count();
+      if (count === lastCount) stable++;
+      else stable = 0;
+
+      lastCount = count;
+      if (stable >= STABLE_CHECKS) break;
+
+      await page.evaluate(() => window.scrollBy(0, Math.floor(window.innerHeight * 1.5)));
+      await page.waitForTimeout(WAIT_BETWEEN);
+
+      try {
+        await page.waitForLoadState("networkidle", { timeout: 1500 });
+      } catch {
+        // ignore
       }
+    }
 
-      const root =
-        document.querySelector('[data-testid="masonry"]') ||
-        document.querySelector('[class*="masonry"]') ||
-        document.querySelector("main") ||
-        document.body;
+    // Give the layout a beat to settle after final scroll
+    await page.waitForTimeout(600);
 
-      // Build a list of “cards” in DOM order.
-      // Cosmos generally uses links for cards, so we take anchors that contain media.
-      const anchors = Array.from(root.querySelectorAll("a"))
-        .filter(a => a.querySelector("img, video"));
+    const extracted = await page.evaluate(() => {
+      const SKIP_AVATAR_RE = /cdn\.cosmos\.so\/default-avatars\//i;
 
+      const cleanUrl = (u) => {
+        try {
+          const x = new URL(u, window.location.href);
+          x.search = "";
+          x.hash = "";
+          return x.toString();
+        } catch {
+          return null;
+        }
+      };
+
+      const bestFromSrcset = (srcset) => {
+        if (!srcset || typeof srcset !== "string") return null;
+        const parts = srcset
+          .split(",")
+          .map(s => s.trim())
+          .map(s => {
+            const [url, size] = s.split(/\s+/);
+            let score = 0;
+            if (size?.endsWith("w")) score = parseInt(size, 10) || 0;
+            if (size?.endsWith("x")) score = (parseFloat(size) || 0) * 1000;
+            return { url, score };
+          })
+          .filter(p => p.url);
+
+        if (!parts.length) return null;
+        parts.sort((a, b) => b.score - a.score);
+        return parts[0].url;
+      };
+
+      const upgradeMuxToHigh = (u) => {
+        try {
+          const x = new URL(u);
+          if (x.host.toLowerCase() !== "stream.mux.com") return cleanUrl(x.toString());
+          const seg = x.pathname.split("/").filter(Boolean);
+          if (seg.length >= 2) seg[1] = "high.mp4";
+          x.pathname = "/" + seg.join("/");
+          x.search = "";
+          x.hash = "";
+          return x.toString();
+        } catch {
+          return cleanUrl(u);
+        }
+      };
+
+      const getMuxPlaybackId = (u) => {
+        try {
+          const x = new URL(u);
+          if (x.host.toLowerCase() !== "stream.mux.com") return null;
+          const seg = x.pathname.split("/").filter(Boolean);
+          return seg[0] || null;
+        } catch {
+          return null;
+        }
+      };
+
+      const getCosmosUuid = (u) => {
+        try {
+          const x = new URL(u);
+          const m = x.pathname.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+          return m ? m[0].toLowerCase() : null;
+        } catch {
+          return null;
+        }
+      };
+
+      const isMuxThumbnail = (u) => {
+        try {
+          const x = new URL(u);
+          return x.host.toLowerCase() === "image.mux.com" && x.pathname.toLowerCase().endsWith("/thumbnail.png");
+        } catch {
+          return false;
+        }
+      };
+
+      const absHref = (href) => {
+        try { return new URL(href, window.location.href).toString(); }
+        catch { return null; }
+      };
+
+      const pickPermalink = (root) => {
+        const anchors = Array.from(root.querySelectorAll("a[href]"))
+          .map(a => absHref(a.getAttribute("href")))
+          .filter(Boolean);
+
+        if (!anchors.length) return null;
+
+        // Prefer a link that stays inside this cluster path
+        const here = new URL(window.location.href);
+        const prefer = anchors.find(h => {
+          try {
+            const u = new URL(h);
+            return u.host === here.host && u.pathname.startsWith(here.pathname);
+          } catch { return false; }
+        });
+
+        return prefer || anchors[0];
+      };
+
+      const pickVideoSrc = (root) => {
+        const urls = new Set();
+
+        const push = (u) => {
+          const cu = cleanUrl(u);
+          if (cu) urls.add(cu);
+        };
+
+        // Most common
+        root.querySelectorAll("video").forEach(v => {
+          const s = v.getAttribute("src");
+          if (s) push(s);
+          const p = v.getAttribute("poster");
+          if (p) push(p);
+        });
+
+        root.querySelectorAll("source[src]").forEach(s => push(s.getAttribute("src")));
+
+        // Any element with src or data-src
+        root.querySelectorAll("[src],[data-src]").forEach(n => {
+          const s1 = n.getAttribute("src");
+          const s2 = n.getAttribute("data-src");
+          if (s1) push(s1);
+          if (s2) push(s2);
+        });
+
+        const mp4s = Array.from(urls).filter(u => /\.mp4(\?|$)/i.test(u));
+        if (!mp4s.length) return null;
+
+        // Prefer Mux mp4
+        const mux = mp4s.find(u => {
+          try { return new URL(u).host.toLowerCase() === "stream.mux.com"; }
+          catch { return false; }
+        });
+
+        return mux || mp4s[0];
+      };
+
+      const pickPoster = (root) => {
+        // Prefer mux thumbnail.png
+        const imgs = Array.from(root.querySelectorAll("img")).map(img => {
+          const fromSet = bestFromSrcset(img.getAttribute("srcset"));
+          return cleanUrl(fromSet || img.getAttribute("src") || img.getAttribute("data-src"));
+        }).filter(Boolean);
+
+        const muxThumb = imgs.find(u => isMuxThumbnail(u));
+        if (muxThumb) return muxThumb;
+
+        // fallback first image
+        return imgs[0] || null;
+      };
+
+      const pickImageSrc = (root) => {
+        const imgs = Array.from(root.querySelectorAll("img")).map(img => {
+          const fromSet = bestFromSrcset(img.getAttribute("srcset"));
+          return cleanUrl(fromSet || img.getAttribute("src") || img.getAttribute("data-src"));
+        }).filter(Boolean);
+
+        // Filter out junk
+        const filtered = imgs.filter(u => !SKIP_AVATAR_RE.test(u));
+
+        // If the only thing we found is a mux thumbnail, treat it as not-an-item
+        const nonMuxThumb = filtered.find(u => !isMuxThumbnail(u));
+        return nonMuxThumb || null;
+      };
+
+      const listitems = Array.from(document.querySelectorAll('[role="listitem"]'));
+
+      const raw = listitems.map(li => {
+        const rect = li.getBoundingClientRect();
+        const top = rect.top + window.scrollY;
+        const left = rect.left + window.scrollX;
+
+        const permalink = pickPermalink(li);
+
+        const videoSrc0 = pickVideoSrc(li);
+        const poster0 = pickPoster(li);
+        const imageSrc0 = pickImageSrc(li);
+
+        if (videoSrc0) {
+          const upgraded = upgradeMuxToHigh(videoSrc0);
+          return {
+            top,
+            left,
+            keyHint: permalink || null,
+            type: "video",
+            src: upgraded,
+            poster: poster0 || null,
+            width: 0,
+            height: 0,
+            link: permalink || null,
+          };
+        }
+
+        if (imageSrc0) {
+          // Ignore mux thumbnails as standalone images
+          if (isMuxThumbnail(imageSrc0)) return null;
+
+          return {
+            top,
+            left,
+            keyHint: permalink || null,
+            type: "image",
+            src: imageSrc0,
+            width: 0,
+            height: 0,
+            link: permalink || null,
+          };
+        }
+
+        return null;
+      }).filter(Boolean);
+
+      // Sort in visual order at this viewport
+      raw.sort((a, b) => (a.top - b.top) || (a.left - b.left));
+
+      // Dedupe using permalink first, then playbackId, then cosmos uuid, then src
+      const seen = new Set();
       const out = [];
 
-      for (const a of anchors) {
-        const href = a.href || "";
-        const img = a.querySelector("img");
-        const vid = a.querySelector("video");
+      for (const it of raw) {
+        let key = null;
 
-        if (vid) {
-          const src =
-            vid.currentSrc ||
-            vid.src ||
-            (vid.querySelector("source")?.src) ||
-            "";
-          out.push({
-            cardKey: href || src || Math.random().toString(36).slice(2),
-            src,
-            poster: vid.poster || null,
-            kind: "video",
-          });
-          continue;
+        if (it.keyHint) key = `link:${it.keyHint}`;
+
+        if (!key && it.type === "video") {
+          const pid = getMuxPlaybackId(it.src);
+          if (pid) key = `mux:${pid}`;
         }
 
-        if (img) {
-          const src = pickBestFromSrcset(img) || img.src || "";
-          out.push({
-            cardKey: href || src || Math.random().toString(36).slice(2),
-            src,
-            poster: null,
-            kind: "image",
-          });
+        if (!key) {
+          const uuid = getCosmosUuid(it.src);
+          if (uuid) key = `uuid:${uuid}`;
         }
+
+        if (!key) key = `src:${it.src}`;
+
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        out.push(it);
       }
 
       return out;
     });
 
-    for (const raw of batch) {
-      if (!raw?.src) continue;
+    // Match your current rlp-scripts behaviour (it reverses items before rendering)
+    const itemsForJson = OUTPUT_REVERSED_FOR_RLP_SCRIPTS
+      ? extracted.slice().reverse()
+      : extracted;
 
-      const nsrc0 = normaliseURL(raw.src, COSMOS_URL);
-      if (!nsrc0 || isExcluded(nsrc0)) continue;
+    const payload = {
+      ok: true,
+      source: COSMOS_URL,
+      scrapedAt: new Date().toISOString(),
+      viewport: { width: VIEWPORT_W, height: VIEWPORT_H },
+      count: itemsForJson.length,
+      items: itemsForJson.map(({ top, left, keyHint, ...rest }) => rest),
+    };
 
-      // If it is a Mux thumbnail, treat it as a video poster, not a standalone image.
-      const muxThumbPid = muxPlaybackIdFromThumb(nsrc0);
-      if (muxThumbPid) {
-        const videoSrc = `https://stream.mux.com/${muxThumbPid}/high.mp4`;
-        const item = {
-          type: "video",
-          src: normaliseURL(videoSrc) || videoSrc,
-          poster: nsrc0,
-          width: 0,
-          height: 0,
-        };
-
-        const key = raw.cardKey || `mux:${muxThumbPid}`;
-        if (!byCard.has(key)) order.push(key);
-
-        // Only keep one media per card, mux video wins
-        byCard.set(key, item);
-        continue;
-      }
-
-      // Normal media flow
-      let finalSrc = nsrc0;
-      let type = (raw.kind || inferTypeFromUrl(finalSrc)).toLowerCase();
-
-      // If Mux stream video, upgrade low -> high
-      if (type === "video") {
-        const pid = muxPlaybackIdFromStream(finalSrc);
-        if (pid) {
-          finalSrc = upgradeMuxToHigh(`https://stream.mux.com/${pid}/low.mp4`);
-          finalSrc = normaliseURL(finalSrc) || finalSrc;
-        }
-      }
-
-      const item = {
-        type: type === "video" ? "video" : "image",
-        src: finalSrc,
-        width: 0,
-        height: 0,
-        ...(raw.poster ? { poster: normaliseURL(raw.poster) || raw.poster } : {}),
-      };
-
-      // Primary dedupe by card key
-      const cardKey = raw.cardKey || `${item.type}:${item.src}`;
-      if (!byCard.has(cardKey)) order.push(cardKey);
-
-      // Secondary dedupe by media key, but only if this card has no item yet
-      const mk = mediaKey(item);
-      if (seenMediaKeys.has(mk) && !byCard.has(cardKey)) continue;
-      seenMediaKeys.add(mk);
-
-      byCard.set(cardKey, item);
-    }
+    ensureDir(OUT_FILE);
+    fs.writeFileSync(OUT_FILE, JSON.stringify(payload, null, 2));
+    console.log(`Wrote ${payload.count} items -> ${OUT_FILE}`);
+  } finally {
+    await page.close().catch(() => {});
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
   }
+}
 
-  console.log("Scrolling + collecting (DOM order)…");
-  let lastH = 0;
-  let stable = 0;
-
-  for (let i = 0; i < MAX_SCROLLS; i++) {
-    await collectFromDOM();
-
-    const innerH = await page.evaluate(() => window.innerHeight);
-    await page.mouse.wheel(0, Math.floor(innerH * 0.9));
-    await page.waitForTimeout(WAIT_BETWEEN);
-
-    const h = await page.evaluate(() => document.body.scrollHeight);
-    if (h === lastH) {
-      stable++;
-      if (stable >= STABLE_CHECKS) break;
-    } else {
-      stable = 0;
-      lastH = h;
-    }
-
-    if ((i + 1) % 10 === 0) {
-      console.log(`…scroll ${i + 1}, cards: ${order.length}`);
-    }
-  }
-
-  await collectFromDOM();
-  await browser.close();
-
-  // Produce final ordered list
-  const items = [];
-  const finalSeen = new Set();
-  for (const k of order) {
-    const it = byCard.get(k);
-    if (!it?.src) continue;
-
-    const mk = mediaKey(it);
-    if (finalSeen.has(mk)) continue;
-    finalSeen.add(mk);
-
-    items.push(it);
-  }
-
-  fs.mkdirSync(OUT_DIR, { recursive: true });
-  fs.writeFileSync(
-    OUT_FILE,
-    JSON.stringify({ ok: true, source: COSMOS_URL, count: items.length, items }, null, 2)
-  );
-  console.log(`✅ Saved ${items.length} items → ${OUT_FILE}`);
-})();
+main().catch((e) => {
+  console.error(e);
+  const fail = {
+    ok: false,
+    source: COSMOS_URL,
+    count: 0,
+    items: [],
+    error: String(e?.message || e),
+  };
+  try {
+    ensureDir(OUT_FILE);
+    fs.writeFileSync(OUT_FILE, JSON.stringify(fail, null, 2));
+  } catch {}
+  process.exit(1);
+});
