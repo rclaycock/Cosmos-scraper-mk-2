@@ -1,0 +1,220 @@
+name: Cosmos Gallery Scraper
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *" # hourly
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    env:
+      URLS: >
+        https://www.cosmos.so/rlphoto/swim,
+        https://www.cosmos.so/rlphoto/studio-tests,
+        https://www.cosmos.so/rlphoto/studio-test-feminine,
+        https://www.cosmos.so/rlphoto/swim-resort,
+        https://www.cosmos.so/rlphoto/location-tests
+      MAX_SCROLLS: 200
+      WAIT_BETWEEN: 1000
+      FIRST_IDLE: 9000
+      STABLE_CHECKS: 6
+      PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
+
+    steps:
+      - name: Checkout repository (force latest main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          clean: true
+
+      - name: Use Node.js 20 + cache npm
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Prepare cache dirs
+        run: |
+          mkdir -p /home/runner/.cache/ms-playwright
+          mkdir -p /home/runner/.cache/playwright
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            /home/runner/.cache/ms-playwright
+            /home/runner/.cache/playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ms-playwright-${{ runner.os }}-
+
+      - name: Install dependencies (reproducible)
+        run: npm ci
+
+      - name: Install Playwright (Chromium + deps)
+        run: npx playwright install --with-deps chromium
+
+      - name: Scrape all Cosmos pages
+        run: |
+          IFS=',' read -ra arr <<< "${URLS}"
+          mkdir -p public
+          for u in "${arr[@]}"; do
+            u=$(echo "$u" | xargs)
+            slug=$(basename "$u")
+            echo "Scraping $u -> public/${slug}.json"
+            COSMOS_URL="$u" OUT_FILE="public/${slug}.json" \
+            MAX_SCROLLS="${MAX_SCROLLS}" WAIT_BETWEEN="${WAIT_BETWEEN}" FIRST_IDLE="${FIRST_IDLE}" STABLE_CHECKS="${STABLE_CHECKS}" \
+            npm run scrape
+          done
+
+      - name: Normalize + dedupe (Mux low → high only)
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const PUB = path.resolve(process.cwd(), 'public');
+          if (!fs.existsSync(PUB)) process.exit(0);
+
+          const files = fs.readdirSync(PUB).filter(f => f.endsWith('.json'));
+
+          const MUX_HOST = 'stream.mux.com';
+
+          const normUrl = (url) => {
+            try {
+              const u = new URL(url);
+              u.hash = '';
+              u.search = '';
+              u.host = u.host.toLowerCase();
+              return u.toString();
+            } catch {
+              return null;
+            }
+          };
+
+          const muxPlaybackId = (url) => {
+            try {
+              const u = new URL(url);
+              if (u.host.toLowerCase() !== MUX_HOST) return null;
+              const seg = u.pathname.split('/').filter(Boolean);
+              return seg[0] || null;
+            } catch {
+              return null;
+            }
+          };
+
+          const upgradeMux = (url) => {
+            try {
+              const u = new URL(url);
+              if (u.host.toLowerCase() !== MUX_HOST) return url;
+              const seg = u.pathname.split('/').filter(Boolean);
+              if (seg.length < 2) return url;
+              seg[1] = 'high.mp4';
+              u.pathname = '/' + seg.join('/');
+              u.search = '';
+              u.hash = '';
+              return u.toString();
+            } catch {
+              return url;
+            }
+          };
+
+          const cosmosUuidFromPath = (url) => {
+            try {
+              const u = new URL(url);
+              const m = u.pathname.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+              return m ? m[0].toLowerCase() : null;
+            } catch {
+              return null;
+            }
+          };
+
+          const isVideo = (url) => {
+            try {
+              return /\.(mp4|webm|m4v|mov)$/i.test(new URL(url).pathname);
+            } catch {
+              return false;
+            }
+          };
+
+          for (const file of files) {
+            const full = path.join(PUB, file);
+
+            let data;
+            try { data = JSON.parse(fs.readFileSync(full, 'utf8')); }
+            catch { continue; }
+
+            const list = Array.isArray(data) ? data
+              : Array.isArray(data.items) ? data.items
+              : [];
+
+            const out = [];
+            const seen = new Set();
+
+            for (const raw of list) {
+              const item = { ...raw };
+
+              let src = item.src || item.url || item.image || item.href;
+              if (!src) continue;
+
+              src = normUrl(src) || src;
+
+              const pb = muxPlaybackId(src);
+              if (pb) src = upgradeMux(src);
+
+              const nsrc = normUrl(src);
+              if (!nsrc) continue;
+
+              if (item.poster) {
+                const p = normUrl(item.poster);
+                if (p) item.poster = p;
+              }
+
+              const type = (item.type || (isVideo(nsrc) ? 'video' : 'image')).toLowerCase();
+              item.type = type;
+              item.src = nsrc;
+
+              let key = null;
+
+              // 1) If scraper ever provides a stable key/id, use that
+              if (item.key) key = `${type}:key:${String(item.key)}`;
+
+              // 2) Mux videos: use playbackId
+              if (!key && type === 'video' && pb) key = `video:mux:${pb}`;
+
+              // 3) Cosmos-style UUID in path (often stable across variants)
+              if (!key) {
+                const uuid = cosmosUuidFromPath(nsrc);
+                if (uuid) key = `${type}:uuid:${uuid}`;
+              }
+
+              // 4) Fallback to URL
+              if (!key) key = `${type}:url:${nsrc}`;
+
+              if (seen.has(key)) continue;
+              seen.add(key);
+
+              out.push(item);
+            }
+
+            const finalObj =
+              Array.isArray(data) ? out :
+              Array.isArray(data.items) ? { ...data, items: out, count: out.length } :
+              out;
+
+            fs.writeFileSync(full, JSON.stringify(finalObj, null, 2));
+            console.log(`✔ ${file}: ${list.length} → ${out.length} (low→high, deduped)`);
+          }
+          NODE
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: gh-pages
