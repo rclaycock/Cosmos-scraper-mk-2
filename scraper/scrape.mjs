@@ -14,23 +14,16 @@ const OUT_FILE = process.env.OUT_FILE
   : path.join(OUT_DIR, "gallery.json");
 
 // Tunables via env
-const MAX_SCROLLS   = Number(process.env.MAX_SCROLLS   || 200);
-const WAIT_BETWEEN  = Number(process.env.WAIT_BETWEEN  || 1000);
-const FIRST_IDLE    = Number(process.env.FIRST_IDLE    || 9000);
+const MAX_SCROLLS = Number(process.env.MAX_SCROLLS || 200);
+const WAIT_BETWEEN = Number(process.env.WAIT_BETWEEN || 1000);
+const FIRST_IDLE = Number(process.env.FIRST_IDLE || 9000);
 const STABLE_CHECKS = Number(process.env.STABLE_CHECKS || 6);
 
-// Media patterns and hosts
-const MEDIA_EXT_RE = /\.(jpe?g|png|webp|gif|avif|mp4|webm|m4v|mov|heic)(\?|$)/i;
-const VIDEO_EXT_RE = /\.(mp4|webm|m4v|mov)(\?|$)/i;
-const CDN_HOST_ALLOW = [
-  "cdn.cosmos.so",
-  "files.cosmos.so",
-  "images.prismic",
-  "cloudfront",
-  "googleusercontent"
-];
+// Media patterns
+const IMG_EXT_RE = /\.(jpe?g|png|webp|gif|avif|heic)(\?|$)/i;
+const VID_EXT_RE = /\.(mp4|webm|m4v|mov)(\?|$)/i;
 
-// Exclude obvious non-gallery assets (avatars, favicons, Next.js bundles, base64, etc)
+// Exclude obvious non-gallery assets
 function isExcluded(src) {
   return (
     !src ||
@@ -45,235 +38,247 @@ function isExcluded(src) {
 function normaliseURL(src, base = COSMOS_URL) {
   try {
     const u = new URL(src, base);
-    // Strip query to dedupe CDN variants (keeps file extension)
-    return u.origin + u.pathname;
+    // strip query/fragment to dedupe CDN variants
+    return `${u.protocol}//${u.host}${u.pathname}`;
   } catch {
     return null;
   }
 }
 
-function allowByHostAndExt(urlStr) {
+function muxPlaybackIdFromThumb(urlStr) {
   try {
     const u = new URL(urlStr);
-    const hostOk = CDN_HOST_ALLOW.some(h => u.host.includes(h));
-    const extOk  = MEDIA_EXT_RE.test(u.pathname);
-    // Prefer ext match; host allowlist is a fallback
-    return extOk || hostOk;
+    if (u.host.toLowerCase() !== "image.mux.com") return null;
+    const parts = u.pathname.split("/").filter(Boolean); // [playbackId, "thumbnail.png"]
+    if (parts.length >= 2 && parts[1].toLowerCase() === "thumbnail.png") return parts[0];
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
-function uniqBySrc(items) {
-  const seen = new Set();
-  return items.filter(it => {
-    const key = `${it.type}:${it.src}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+function muxPlaybackIdFromStream(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    if (u.host.toLowerCase() !== "stream.mux.com") return null;
+    const parts = u.pathname.split("/").filter(Boolean); // [playbackId, "low.mp4"]
+    return parts[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+function upgradeMuxToHigh(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    if (u.host.toLowerCase() !== "stream.mux.com") return urlStr;
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (!parts.length) return urlStr;
+    // force /high.mp4
+    parts[1] = "high.mp4";
+    u.pathname = "/" + parts.join("/");
+    u.search = "";
+    u.hash = "";
+    return u.toString();
+  } catch {
+    return urlStr;
+  }
+}
+
+function inferTypeFromUrl(urlStr) {
+  if (VID_EXT_RE.test(urlStr)) return "video";
+  if (IMG_EXT_RE.test(urlStr)) return "image";
+  // default fallback
+  return "image";
 }
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
-    viewport: { width: 3840, height: 2160 },
+    viewport: { width: 1920, height: 1080 },
     deviceScaleFactor: 2,
     userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari"
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
   });
   const page = await context.newPage();
 
-  // Force lazy loaders to treat elements as visible
+  // Make lazy loaders more eager
   await page.addInitScript(() => {
     const OrigIO = window.IntersectionObserver;
     window.IntersectionObserver = class FakeIO {
-      constructor(cb, opts){ this._cb = cb; this._opts = opts; }
-      observe(el){ try { this._cb([{ isIntersecting: true, target: el, intersectionRatio: 1 }]); } catch {} }
+      constructor(cb) { this._cb = cb; }
+      observe(el) {
+        try {
+          this._cb([{ isIntersecting: true, target: el, intersectionRatio: 1 }]);
+        } catch {}
+      }
       unobserve() {}
       disconnect() {}
-      takeRecords(){ return []; }
+      takeRecords() { return []; }
     };
-    window.IntersectionObserverEntry = function(){};
+    window.IntersectionObserverEntry = function () {};
     window.__IOPatched = true;
-  });
-
-  // Capture media-like URLs seen on the network
-  const netFound = new Set();
-  page.on("response", async (res) => {
-    try {
-      const url = res.url();
-      const norm = normaliseURL(url);
-      if (!norm || isExcluded(norm)) return;
-
-      // Direct media files
-      if (MEDIA_EXT_RE.test(norm)) {
-        netFound.add(norm);
-        return;
-      }
-
-      // Parse JSON responses for embedded URLs
-      const ct = (res.headers()["content-type"] || "").toLowerCase();
-      if (ct.includes("application/json")) {
-        const text = await res.text().catch(() => "");
-        const urls = text.match(/https?:\/\/[^\s"'\\)]+/g) || [];
-        for (const u of urls) {
-          const n = normaliseURL(u);
-          if (!n || isExcluded(n)) continue;
-          if (allowByHostAndExt(n)) netFound.add(n);
-        }
-      }
-    } catch {}
   });
 
   console.log(`Navigating to ${COSMOS_URL}`);
   await page.goto(COSMOS_URL, { waitUntil: "domcontentloaded", timeout: 120000 });
   await page.waitForTimeout(FIRST_IDLE);
 
-  // EXTRA: force one full scroll after initial idle to kick lazy image mounts
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await page.waitForTimeout(3000);
+  // Ordered list of card keys (first-seen order)
+  const order = [];
+  // Map of cardKey -> final item
+  const byCard = new Map();
+  // Dedupe across truly identical media (safety)
+  const seenMediaKeys = new Set();
 
-  // Stores *positional* records from DOM; we’ll sort by top/left at the end.
-  let positional = [];
-
-  // Also keep a map of any extras discovered via network that weren’t visible
-  const foundMap = new Map();
-
-  function mergeNetworkToMap() {
-    for (const u of netFound) {
-      if (isExcluded(u)) continue;
-      if (!allowByHostAndExt(u)) continue;
-      const isVideo = VIDEO_EXT_RE.test(u);
-      if (!foundMap.has(u)) {
-        foundMap.set(u, { type: isVideo ? "video" : "image", src: u });
-      }
+  function mediaKey(item) {
+    // Prefer stable video key for mux
+    if (item.type === "video") {
+      const pid = muxPlaybackIdFromStream(item.src);
+      if (pid) return `video:mux:${pid}`;
     }
+    return `${item.type}:${item.src}`;
   }
 
   async function collectFromDOM() {
     const batch = await page.evaluate(() => {
-      const SKIP = /cdn\.cosmos\.so\/default-avatars\//i;
-
-      // Prefer the gallery root if we can spot it; otherwise scan the document.
-      const root =
-        document.querySelector('[data-testid="masonry"]') ||
-        document.querySelector('[class*="masonry"]') ||
-        document.querySelector("main") ||
-        document.body;
-
       function pickBestFromSrcset(img) {
         try {
           if (img.currentSrc) return img.currentSrc;
           const ss = img.getAttribute("srcset");
           if (!ss) return img.getAttribute("src") || "";
           const parts = ss.split(",").map(s => s.trim());
-          const candidates = parts.map(p => {
-            const [url, size] = p.split(/\s+/);
-            const w = size?.endsWith("w") ? parseInt(size, 10) : 0;
-            return { url, w: isNaN(w) ? 0 : w };
-          }).sort((a, b) => b.w - a.w);
-          return (candidates[0]?.url) || img.getAttribute("src") || "";
-        } catch { return img.getAttribute("src") || ""; }
+          const candidates = parts
+            .map(p => {
+              const [url, size] = p.split(/\s+/);
+              const w = size?.endsWith("w") ? parseInt(size, 10) : 0;
+              return { url, w: Number.isFinite(w) ? w : 0 };
+            })
+            .sort((a, b) => b.w - a.w);
+          return candidates[0]?.url || img.getAttribute("src") || "";
+        } catch {
+          return img.getAttribute("src") || "";
+        }
       }
+
+      const root =
+        document.querySelector('[data-testid="masonry"]') ||
+        document.querySelector('[class*="masonry"]') ||
+        document.querySelector("main") ||
+        document.body;
+
+      // Build a list of “cards” in DOM order.
+      // Cosmos generally uses links for cards, so we take anchors that contain media.
+      const anchors = Array.from(root.querySelectorAll("a"))
+        .filter(a => a.querySelector("img, video"));
 
       const out = [];
 
-      // IMAGES
-      root.querySelectorAll("img").forEach(img => {
-        const rect = img.getBoundingClientRect();
-        const src = pickBestFromSrcset(img);
-        if (!src || SKIP.test(src)) return;
+      for (const a of anchors) {
+        const href = a.href || "";
+        const img = a.querySelector("img");
+        const vid = a.querySelector("video");
 
-        out.push({
-          type: "image",
-          src,
-          poster: null,
-          width: img.naturalWidth || 0,
-          height: img.naturalHeight || 0,
-          top: rect.top + window.scrollY,
-          left: rect.left + window.scrollX
-        });
-      });
+        if (vid) {
+          const src =
+            vid.currentSrc ||
+            vid.src ||
+            (vid.querySelector("source")?.src) ||
+            "";
+          out.push({
+            cardKey: href || src || Math.random().toString(36).slice(2),
+            src,
+            poster: vid.poster || null,
+            kind: "video",
+          });
+          continue;
+        }
 
-      // VIDEOS (native)
-      root.querySelectorAll("video").forEach(v => {
-        const rect = v.getBoundingClientRect();
-        const s = v.currentSrc || v.src || (v.querySelector("source")?.src) || "";
-        if (!s || SKIP.test(s)) return;
-
-        out.push({
-          type: "video",
-          src: s,
-          poster: v.poster || null,
-          width: v.videoWidth || 0,
-          height: v.videoHeight || 0,
-          top: rect.top + window.scrollY,
-          left: rect.left + window.scrollX
-        });
-      });
-
-      // VIDEOS (player iframes, fallback)
-      root.querySelectorAll("iframe").forEach(f => {
-        const rect = f.getBoundingClientRect();
-        const s = f.src || "";
-        if (!s || SKIP.test(s)) return;
-        if (!/vimeo\.com|player|video|mp4|webm/i.test(s)) return;
-
-        out.push({
-          type: "video",
-          src: s,
-          poster: null,
-          width: 0,
-          height: 0,
-          top: rect.top + window.scrollY,
-          left: rect.left + window.scrollX
-        });
-      });
+        if (img) {
+          const src = pickBestFromSrcset(img) || img.src || "";
+          out.push({
+            cardKey: href || src || Math.random().toString(36).slice(2),
+            src,
+            poster: null,
+            kind: "image",
+          });
+        }
+      }
 
       return out;
     });
 
-    // Client-side filtering + normalisation
-    for (const it of batch) {
-      const norm = normaliseURL(it.src, COSMOS_URL);
-      if (!norm) continue;
-      if (isExcluded(norm)) continue;
-      if (!allowByHostAndExt(norm)) continue;
+    for (const raw of batch) {
+      if (!raw?.src) continue;
 
-      positional.push({
-        type: VIDEO_EXT_RE.test(norm) ? "video" : it.type,
-        src: norm,
-        poster: it.poster || undefined,
-        width: it.width || 0,
-        height: it.height || 0,
-        top: it.top,
-        left: it.left
-      });
+      const nsrc0 = normaliseURL(raw.src, COSMOS_URL);
+      if (!nsrc0 || isExcluded(nsrc0)) continue;
 
-      // Track in the map so network-only assets can be merged later if needed
-      if (!foundMap.has(norm)) {
-        foundMap.set(norm, { type: VIDEO_EXT_RE.test(norm) ? "video" : it.type, src: norm });
+      // If it is a Mux thumbnail, treat it as a video poster, not a standalone image.
+      const muxThumbPid = muxPlaybackIdFromThumb(nsrc0);
+      if (muxThumbPid) {
+        const videoSrc = `https://stream.mux.com/${muxThumbPid}/high.mp4`;
+        const item = {
+          type: "video",
+          src: normaliseURL(videoSrc) || videoSrc,
+          poster: nsrc0,
+          width: 0,
+          height: 0,
+        };
+
+        const key = raw.cardKey || `mux:${muxThumbPid}`;
+        if (!byCard.has(key)) order.push(key);
+
+        // Only keep one media per card, mux video wins
+        byCard.set(key, item);
+        continue;
       }
-    }
 
-    // Add anything seen on the network
-    mergeNetworkToMap();
+      // Normal media flow
+      let finalSrc = nsrc0;
+      let type = (raw.kind || inferTypeFromUrl(finalSrc)).toLowerCase();
+
+      // If Mux stream video, upgrade low -> high
+      if (type === "video") {
+        const pid = muxPlaybackIdFromStream(finalSrc);
+        if (pid) {
+          finalSrc = upgradeMuxToHigh(`https://stream.mux.com/${pid}/low.mp4`);
+          finalSrc = normaliseURL(finalSrc) || finalSrc;
+        }
+      }
+
+      const item = {
+        type: type === "video" ? "video" : "image",
+        src: finalSrc,
+        width: 0,
+        height: 0,
+        ...(raw.poster ? { poster: normaliseURL(raw.poster) || raw.poster } : {}),
+      };
+
+      // Primary dedupe by card key
+      const cardKey = raw.cardKey || `${item.type}:${item.src}`;
+      if (!byCard.has(cardKey)) order.push(cardKey);
+
+      // Secondary dedupe by media key, but only if this card has no item yet
+      const mk = mediaKey(item);
+      if (seenMediaKeys.has(mk) && !byCard.has(cardKey)) continue;
+      seenMediaKeys.add(mk);
+
+      byCard.set(cardKey, item);
+    }
   }
 
-  console.log("Scrolling + collecting…");
+  console.log("Scrolling + collecting (DOM order)…");
   let lastH = 0;
   let stable = 0;
 
   for (let i = 0; i < MAX_SCROLLS; i++) {
     await collectFromDOM();
 
-    // Simulate user scroll
     const innerH = await page.evaluate(() => window.innerHeight);
     await page.mouse.wheel(0, Math.floor(innerH * 0.9));
     await page.waitForTimeout(WAIT_BETWEEN);
 
-    // Stop when page stops growing for a bit
     const h = await page.evaluate(() => document.body.scrollHeight);
     if (h === lastH) {
       stable++;
@@ -284,47 +289,31 @@ function uniqBySrc(items) {
     }
 
     if ((i + 1) % 10 === 0) {
-      console.log(`…scroll ${i + 1}, DOM items so far: ${positional.length}, net: ${netFound.size}`);
+      console.log(`…scroll ${i + 1}, cards: ${order.length}`);
     }
   }
 
-  // Final sweep after idle
   await collectFromDOM();
-
   await browser.close();
 
-  // Sort *visually* by what the user actually sees
-  positional.sort((a, b) => (a.top - b.top) || (a.left - b.left));
+  // Produce final ordered list
+  const items = [];
+  const finalSeen = new Set();
+  for (const k of order) {
+    const it = byCard.get(k);
+    if (!it?.src) continue;
 
-  // Dedup while keeping first occurrence (visual order)
-  const ordered = [];
-  const seen = new Set();
-  for (const it of positional) {
-    const key = `${it.type}:${it.src}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    ordered.push({
-      type: it.type,
-      src: it.src,
-      width: it.width || 0,
-      height: it.height || 0,
-      ...(it.poster ? { poster: it.poster } : {})
-    });
-  }
+    const mk = mediaKey(it);
+    if (finalSeen.has(mk)) continue;
+    finalSeen.add(mk);
 
-  // Optional: append any network-only assets that never appeared on screen (rare)
-  // Keep them *after* visible items so we don’t disturb the visual order.
-  for (const { src, type } of foundMap.values()) {
-    const key = `${type}:${src}`;
-    if (seen.has(key)) continue;
-    ordered.push({ type, src, width: 0, height: 0 });
-    seen.add(key);
+    items.push(it);
   }
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(
     OUT_FILE,
-    JSON.stringify({ ok: true, source: COSMOS_URL, count: ordered.length, items: ordered }, null, 2)
+    JSON.stringify({ ok: true, source: COSMOS_URL, count: items.length, items }, null, 2)
   );
-  console.log(`✅ Saved ${ordered.length} items (visual order) → ${OUT_FILE}`);
+  console.log(`✅ Saved ${items.length} items → ${OUT_FILE}`);
 })();
