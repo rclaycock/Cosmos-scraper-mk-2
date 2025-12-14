@@ -1,7 +1,7 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/studio-tests",
-  "count": 133,
+  "count": 130,
   "items": [
     {
       "type": "image",
@@ -752,12 +752,6 @@
     },
     {
       "type": "image",
-      "src": "https://image.mux.com/uz1BO8o4mzt3ZQMj3Mrfdv02tSwbhvqYU164RZn00D4pA/thumbnail.png",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/59a340b6-f20b-4882-80d1-758ba07ef2f7",
       "width": 0,
       "height": 0
@@ -765,12 +759,6 @@
     {
       "type": "video",
       "src": "https://cdn.cosmos.so/f34a738e-378b-4252-a38b-cbbd020fcbb9.mp4",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://image.mux.com/e00qOJaI93dEL739Qy4wZ01oA3JMHaxkmCj701NeDdwW4Y/thumbnail.png",
       "width": 0,
       "height": 0
     },
@@ -789,12 +777,6 @@
     {
       "type": "video",
       "src": "https://cdn.cosmos.so/34ad8cc9-d29a-4d02-a247-74fa8876d860.mp4",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://image.mux.com/TV7OLmbCRdoW9kfq101NpUMeAotlpOuUX4cu23932FT8/thumbnail.png",
       "width": 0,
       "height": 0
     },
