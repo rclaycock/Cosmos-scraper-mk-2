@@ -1,4 +1,4 @@
-name: Cosmos Gallery Scrappy
+name: Cosmos Gallery Scrappy-Doo
 
 on:
   workflow_dispatch:
@@ -19,41 +19,35 @@ jobs:
         https://www.cosmos.so/rlphoto/swim-resort,
         https://www.cosmos.so/rlphoto/location-tests
 
-      MAX_SCROLLS: 1400
+      MAX_SCROLLS: 260
       WAIT_BETWEEN: 900
-      FIRST_IDLE: 12000
-      STABLE_CHECKS: 25
+      FIRST_IDLE: 7000
+      STABLE_CHECKS: 10
 
-      VIEWPORT_W: 1440
+      VIEWPORT_W: 1600
       VIEWPORT_H: 900
 
       PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
           clean: true
 
-      - name: Use Node.js 20 (cache npm)
+      - name: Use Node.js 20 + npm cache
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
-
-      - name: Prepare cache dirs
-        run: |
-          mkdir -p /home/runner/.cache/ms-playwright
-          mkdir -p /home/runner/.cache/playwright
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
           path: |
             /home/runner/.cache/ms-playwright
-            /home/runner/.cache/playwright
           key: ms-playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ms-playwright-${{ runner.os }}-
@@ -73,10 +67,126 @@ jobs:
             slug=$(basename "$u")
             echo "Scraping $u -> public/${slug}.json"
             COSMOS_URL="$u" OUT_FILE="public/${slug}.json" \
-            MAX_SCROLLS="${MAX_SCROLLS}" WAIT_BETWEEN="${WAIT_BETWEEN}" FIRST_IDLE="${FIRST_IDLE}" STABLE_CHECKS="${STABLE_CHECKS}" \
-            VIEWPORT_W="${VIEWPORT_W}" VIEWPORT_H="${VIEWPORT_H}" \
-            node scrape.mjs
+              MAX_SCROLLS="${MAX_SCROLLS}" WAIT_BETWEEN="${WAIT_BETWEEN}" FIRST_IDLE="${FIRST_IDLE}" STABLE_CHECKS="${STABLE_CHECKS}" \
+              VIEWPORT_W="${VIEWPORT_W}" VIEWPORT_H="${VIEWPORT_H}" \
+              npm run scrape
           done
+
+      - name: Normalise output (Mux high.mp4 + remove mux thumbnails + safe dedupe)
+        run: |
+          node - <<'NODE'
+          const fs = require("fs");
+          const path = require("path");
+
+          const PUB = path.resolve(process.cwd(), "public");
+          if (!fs.existsSync(PUB)) process.exit(0);
+
+          const files = fs.readdirSync(PUB).filter(f => f.endsWith(".json"));
+
+          const MUX_STREAM_HOST = "stream.mux.com";
+          const MUX_IMAGE_HOST = "image.mux.com";
+
+          const normUrl = (url) => {
+            try {
+              const u = new URL(url);
+              u.search = "";
+              u.hash = "";
+              return u.toString();
+            } catch { return null; }
+          };
+
+          const upgradeMux = (url) => {
+            try {
+              const u = new URL(url);
+              if (u.host.toLowerCase() !== MUX_STREAM_HOST) return url;
+              const seg = u.pathname.split("/").filter(Boolean);
+              if (seg[1] && /low\.mp4$/i.test(seg[1])) seg[1] = "high.mp4";
+              u.pathname = "/" + seg.join("/");
+              u.search = "";
+              u.hash = "";
+              return u.toString();
+            } catch { return url; }
+          };
+
+          const muxPlaybackIdFromStream = (url) => {
+            try {
+              const u = new URL(url);
+              if (u.host.toLowerCase() !== MUX_STREAM_HOST) return null;
+              const seg = u.pathname.split("/").filter(Boolean);
+              return seg[0] || null;
+            } catch { return null; }
+          };
+
+          const isMuxThumb = (url) => {
+            try {
+              const u = new URL(url);
+              return u.host.toLowerCase() === MUX_IMAGE_HOST && /thumbnail\.png$/i.test(u.pathname);
+            } catch { return false; }
+          };
+
+          for (const file of files) {
+            const full = path.join(PUB, file);
+            let data;
+            try { data = JSON.parse(fs.readFileSync(full, "utf8")); }
+            catch { continue; }
+
+            const list = Array.isArray(data) ? data
+                       : Array.isArray(data.items) ? data.items
+                       : [];
+
+            const out = [];
+            const seen = new Set();
+
+            for (const raw of list) {
+              const item = { ...raw };
+              let src = item.src || item.url || item.image || item.href;
+              if (!src) continue;
+
+              src = normUrl(src);
+              if (!src) continue;
+
+              // Drop mux thumbnails that sneak in as "images"
+              if (isMuxThumb(src)) continue;
+
+              // Upgrade mux low -> high
+              src = upgradeMux(src);
+
+              const type = (item.type || (/\.(mp4|webm|m4v|mov)$/i.test(new URL(src).pathname) ? "video" : "image")).toLowerCase();
+
+              // Safe dedupe:
+              // - mux videos by playbackId
+              // - everything else by type+src
+              let key = `${type}:${src}`;
+              if (type === "video") {
+                const pid = muxPlaybackIdFromStream(src);
+                if (pid) key = `video:mux:${pid}`;
+              }
+
+              if (seen.has(key)) continue;
+              seen.add(key);
+
+              item.type = type;
+              item.src = src;
+              delete item.url;
+              delete item.image;
+              delete item.href;
+
+              if (item.poster) {
+                const p = normUrl(item.poster);
+                if (p) item.poster = p;
+              }
+
+              out.push(item);
+            }
+
+            const finalObj = Array.isArray(data)
+              ? out
+              : (Array.isArray(data.items) ? { ...data, items: out, count: out.length } : { ok: true, count: out.length, items: out });
+
+            fs.writeFileSync(full, JSON.stringify(finalObj, null, 2));
+            console.log(`✔ ${file}: ${list.length} → ${out.length} (high.mp4, no mux thumbs, deduped)`);
+          }
+          NODE
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
