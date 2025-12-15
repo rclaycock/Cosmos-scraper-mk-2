@@ -1,7 +1,7 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/studio-tests",
-  "count": 170,
+  "count": 125,
   "items": [
     {
       "type": "image",
@@ -30,24 +30,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/3be41013-27cb-4e7a-9716-938940c675f5",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/76a05833-1003-401e-8203-2a2f087f015a",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/fd09346a-974c-4d47-8c6d-3a44d035ce4f",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/eb3624ee-18fd-4c66-ad12-77f8de6e5b16",
       "width": 0,
       "height": 0
     },
@@ -89,37 +71,13 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/32032e85-e501-4986-92a0-d32ac0bd727e",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/c74ed880-9c92-49c5-b824-ac069e552872",
       "width": 0,
       "height": 0
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/42b29ada-f2b6-49f8-ab2b-b8a2fbecfcbe",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/4638d8bb-b60c-4a63-a715-124a473c4a0b",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/b32b8287-3e30-4b23-ac10-fdaad640642f",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/726c31c1-a223-4cf7-9d14-0463083d6841",
       "width": 0,
       "height": 0
     },
@@ -156,18 +114,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/5348152f-105e-497f-b73b-fdfc2ad7b7bc",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/2c5700ab-3687-42f2-aec4-47662de10d6c",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/94adeb58-89d8-4bc1-ad89-d4879d4af749",
       "width": 0,
       "height": 0
     },
@@ -221,18 +167,6 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/f0712b30-bcbd-4ef3-8f30-9ba4ddc49134",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/9e2c84d1-5be8-4166-b197-3a35f370d20b",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/af5cbdac-241b-4c4f-aee2-82106aee3432",
       "width": 0,
       "height": 0
@@ -251,19 +185,7 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/ffbafe8f-fc8c-4bf2-9c80-1348a0af4380",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/24f7e459-c685-4821-bac0-c5352ff16169",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/33140a5c-3313-470a-9baa-2a113ed34a30",
       "width": 0,
       "height": 0
     },
@@ -293,7 +215,7 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/07bc16f1-22fa-4b6e-aa28-855174ec3f30",
+      "src": "https://cdn.cosmos.so/c004334b-60f6-43cf-8b86-e37a763231dd",
       "width": 0,
       "height": 0
     },
@@ -305,31 +227,13 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/c004334b-60f6-43cf-8b86-e37a763231dd",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/b8ac69d0-5543-49b7-9903-cb3fb28316fc",
       "width": 0,
       "height": 0
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/03a11b85-5c24-452c-9e69-2dc8c6b58cda",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/e117ec72-c111-4492-bd00-5564527370b2",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/3ab7165b-89fd-4edb-ab60-baa991847612",
       "width": 0,
       "height": 0
     },
@@ -353,12 +257,6 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/cd10969d-1b1f-4d6d-b0c5-96595278c5b8",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/3f8db30d-0f8a-4ba6-857b-44af59f90229",
       "width": 0,
       "height": 0
@@ -366,12 +264,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/b638123e-0514-4e1b-beb9-8ce842e8bbca",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/9685b5b4-f5d2-49b2-858a-00aa149ffcc6",
       "width": 0,
       "height": 0
     },
@@ -389,49 +281,13 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/c6e45911-3c56-4f44-9bad-4775ac8cfcbe",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/73eb9285-8d81-4529-9dfb-cfb3d07e8264",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/b9cd7297-029e-4da3-8875-f3776e549efc",
       "width": 0,
       "height": 0
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/f7d0fd62-c912-4e0e-95b6-a957debcb7ea",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/9a4322c0-0dbb-42f7-a19d-c2b0786a31cc",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/92a88f80-96df-4f96-9438-32880687cc1a",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/f92d57af-9318-465f-8978-fb1ab3927c7c",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/271b3bd7-da5b-400c-9f19-521f3627ae39",
       "width": 0,
       "height": 0
     },
@@ -534,18 +390,6 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/990e8b80-23a0-4a48-b151-3d1709333575",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/bb518b2a-a46c-455b-b612-809d39ff293a",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/3968b64c-915c-48a6-93cf-e9aa2a7926b1",
       "width": 0,
       "height": 0
@@ -565,12 +409,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/75a64c9c-397e-43d2-9b2d-6ebe7442d4b5",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/9bc5037a-914b-4255-b4cb-060269a71315",
       "width": 0,
       "height": 0
     },
@@ -596,30 +434,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/df958baf-083e-49bb-ae3e-b02c9d15b523",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/f73c1187-d2ac-419d-8e40-e59a88fbe10c",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/a0f92f3f-b0d6-47f2-bc06-61b48128fa4c",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/43646d7b-0661-49d2-8fb6-8af32a707d6f",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/4f2a630c-d74f-4e8a-8ef7-35581055faa3",
       "width": 0,
       "height": 0
     },
@@ -662,12 +476,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/a0ded82a-2c13-45ff-9a48-4c8b57a5232d",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/a1a35c15-1b88-4aa9-b42f-d5c2bef3c62a",
       "width": 0,
       "height": 0
     },
@@ -728,19 +536,7 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/e86018d9-52d6-408a-a9b7-abd53138f376",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/af8ee68e-bc82-4c30-aa45-6b5fb3de4d5d",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/6ba0fa80-bb5f-41f7-b3a1-6050d792d078",
       "width": 0,
       "height": 0
     },
@@ -764,37 +560,13 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/69657b3c-3152-4c7d-9113-8e3fc3e03820",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/d36ab09c-fc97-47c8-a059-b26d36499f7a",
       "width": 0,
       "height": 0
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/811968af-75a6-49bc-9ae1-cf0300cd71ec",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/cc5d1d54-0e24-4528-b27d-bb936bf681ba",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/976934bc-4780-4e64-bb11-3ad6c93721e6",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/5e0bf78d-b543-47b2-8525-badd894e42ef",
       "width": 0,
       "height": 0
     },
@@ -818,12 +590,6 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/7531b7c9-8b08-4371-ad5e-a9383df3a705",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/82bf90f6-8043-4252-a0b9-381e8db00512",
       "width": 0,
       "height": 0
@@ -831,12 +597,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/0445715d-e344-49e3-8686-3f97fd8e29be",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/fd9608a1-462e-4626-b841-692c9399537d",
       "width": 0,
       "height": 0
     },
@@ -854,12 +614,6 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/a9e55cc6-ef23-468a-92c6-c5b590338de7",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/4b9051ac-4901-4679-b004-a63d56f617d3",
       "width": 0,
       "height": 0
@@ -867,12 +621,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/7e5fb1c3-ae39-472c-bc57-6019d2afcf3d",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/89fe008a-ca90-4744-9d4e-9c7fd49fc846",
       "width": 0,
       "height": 0
     },
@@ -908,12 +656,6 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/acd9a1ba-7a9f-438b-b180-9b54399b4909",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/9aef2fa4-d7eb-42d4-b53f-cfaae8817ae5",
       "width": 0,
       "height": 0
@@ -944,12 +686,6 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/ab958db7-1a85-4f0e-858b-2854449b0918",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/56654c48-4696-4982-9e17-09c8605f563d",
       "width": 0,
       "height": 0
@@ -957,12 +693,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/d0708145-8273-429a-b46a-d33524bb0d82",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/a877d81b-fc00-4c84-8334-f487e20c5c10",
       "width": 0,
       "height": 0
     },
