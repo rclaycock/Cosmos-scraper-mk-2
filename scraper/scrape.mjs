@@ -1,4 +1,3 @@
-// scraper/scrape.mjs
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -14,68 +13,84 @@ const OUT_FILE = process.env.OUT_FILE
   : path.join(OUT_DIR, "gallery.json");
 
 // Tunables via env
-const MAX_SCROLLS = Number(process.env.MAX_SCROLLS || 260);
-const WAIT_BETWEEN = Number(process.env.WAIT_BETWEEN || 900);
-const FIRST_IDLE = Number(process.env.FIRST_IDLE || 7000);
-const STABLE_CHECKS = Number(process.env.STABLE_CHECKS || 10);
-
-// Prefer a fixed viewport so Cosmos layout is deterministic
-const VIEWPORT_W = Number(process.env.VIEWPORT_W || 1600);
-const VIEWPORT_H = Number(process.env.VIEWPORT_H || 900);
+const MAX_SCROLLS   = Number(process.env.MAX_SCROLLS   || 260);
+const WAIT_BETWEEN  = Number(process.env.WAIT_BETWEEN  || 900);
+const FIRST_IDLE    = Number(process.env.FIRST_IDLE    || 8000);
+const STABLE_CHECKS = Number(process.env.STABLE_CHECKS || 8);
 
 // Media patterns
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|avif|heic)(\?|$)/i;
 const VIDEO_EXT_RE = /\.(mp4|webm|m4v|mov)(\?|$)/i;
+const MEDIA_EXT_RE = /\.(jpe?g|png|webp|gif|avif|mp4|webm|m4v|mov|heic)(\?|$)/i;
 
-// Rules
-const SKIP_AVATAR_RE = /cdn\.cosmos\.so\/default-avatars\//i;
-const SKIP_NEXT_RE = /\/_next\//i;
+// Hosts
+const CDN_HOST_ALLOW = [
+  "cdn.cosmos.so",
+  "files.cosmos.so",
+  "image.mux.com",
+  "stream.mux.com",
+  "images.prismic",
+  "cloudfront",
+  "googleusercontent"
+];
 
-// Mux helpers
-const MUX_STREAM_HOST = "stream.mux.com";
-const MUX_IMAGE_HOST = "image.mux.com";
-
-function isExcludedUrl(u) {
+// Exclusions
+function isExcluded(src) {
   return (
-    !u ||
-    u.startsWith("data:") ||
-    SKIP_AVATAR_RE.test(u) ||
-    SKIP_NEXT_RE.test(u) ||
-    u.includes("favicon")
+    !src ||
+    src.startsWith("data:") ||
+    src.includes("default-avatars") ||
+    src.includes("/_next/") ||
+    src.includes("favicon") ||
+    src.includes("cosmos.so/api/avatar")
   );
 }
 
+// Ignore mux thumbnails (these cause "duplicate looking" stills)
+function isMuxThumbnail(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    return (
+      u.host.toLowerCase() === "image.mux.com" &&
+      /\/thumbnail\.png$/i.test(u.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Normalise URL (strip query/hash, keep extension)
 function normaliseURL(src, base = COSMOS_URL) {
   try {
     const u = new URL(src, base);
     u.search = "";
     u.hash = "";
-    return u.toString();
+    // keep protocol/host/path
+    return `${u.protocol}//${u.host}${u.pathname}`;
   } catch {
     return null;
   }
 }
 
-function muxPlaybackIdFromStream(urlStr) {
+function allowByHostAndExt(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    const hostOk = CDN_HOST_ALLOW.some(h => u.host.toLowerCase().includes(h));
+    const extOk  = MEDIA_EXT_RE.test(u.pathname);
+    return extOk || hostOk;
+  } catch {
+    return false;
+  }
+}
+
+// Mux helpers
+const MUX_STREAM_HOST = "stream.mux.com";
+function muxPlaybackIdFromUrl(urlStr) {
   try {
     const u = new URL(urlStr);
     if (u.host.toLowerCase() !== MUX_STREAM_HOST) return null;
     const seg = u.pathname.split("/").filter(Boolean);
-    return seg[0] || null;
-  } catch {
-    return null;
-  }
-}
-
-function muxPlaybackIdFromThumb(urlStr) {
-  try {
-    const u = new URL(urlStr);
-    if (u.host.toLowerCase() !== MUX_IMAGE_HOST) return null;
-    // /<playbackId>/thumbnail.png
-    const seg = u.pathname.split("/").filter(Boolean);
-    if (!seg[0]) return null;
-    if (!/thumbnail\.png$/i.test(u.pathname)) return null;
-    return seg[0];
+    return seg[0] || null; // /<playbackId>/low.mp4
   } catch {
     return null;
   }
@@ -87,8 +102,8 @@ function upgradeMuxLowToHigh(urlStr) {
     if (u.host.toLowerCase() !== MUX_STREAM_HOST) return urlStr;
     const seg = u.pathname.split("/").filter(Boolean);
     if (!seg.length) return urlStr;
-    // seg[0] playbackId, seg[1] low.mp4/high.mp4
-    if (seg[1] && /low\.mp4$/i.test(seg[1])) seg[1] = "high.mp4";
+    // enforce high.mp4
+    seg[1] = "high.mp4";
     u.pathname = "/" + seg.join("/");
     u.search = "";
     u.hash = "";
@@ -98,50 +113,97 @@ function upgradeMuxLowToHigh(urlStr) {
   }
 }
 
+function isCosmosHostedMp4(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    const host = u.host.toLowerCase();
+    if (!VIDEO_EXT_RE.test(u.pathname)) return false;
+    return host === "cdn.cosmos.so" || host === "files.cosmos.so";
+  } catch {
+    return false;
+  }
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: true });
+
   const context = await browser.newContext({
-    viewport: { width: VIEWPORT_W, height: VIEWPORT_H },
+    viewport: { width: 3840, height: 2160 },
     deviceScaleFactor: 2,
     userAgent:
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari"
   });
+
   const page = await context.newPage();
 
-  // Make lazy loaders think everything is visible
+  // Force lazy loaders to treat elements as visible
   await page.addInitScript(() => {
-    const OrigIO = window.IntersectionObserver;
     window.IntersectionObserver = class FakeIO {
-      constructor(cb) { this._cb = cb; }
-      observe(el) {
-        try {
-          this._cb([{ isIntersecting: true, target: el, intersectionRatio: 1 }]);
-        } catch {}
+      constructor(cb){ this._cb = cb; }
+      observe(el){
+        try { this._cb([{ isIntersecting: true, target: el, intersectionRatio: 1 }]); } catch {}
       }
       unobserve() {}
       disconnect() {}
-      takeRecords() { return []; }
+      takeRecords(){ return []; }
     };
     window.IntersectionObserverEntry = function(){};
-    window.__IOPatched = true;
+  });
+
+  // Network capture (helps when URLs are present in JSON responses)
+  const netFound = new Set();
+  page.on("response", async (res) => {
+    try {
+      const url = res.url();
+      let norm = normaliseURL(url);
+      if (!norm || isExcluded(norm) || isMuxThumbnail(norm)) return;
+
+      if (MEDIA_EXT_RE.test(norm)) {
+        netFound.add(norm);
+        return;
+      }
+
+      const ct = (res.headers()["content-type"] || "").toLowerCase();
+      if (ct.includes("application/json")) {
+        const text = await res.text().catch(() => "");
+        const urls = text.match(/https?:\/\/[^\s"'\\)]+/g) || [];
+        for (const u of urls) {
+          const n = normaliseURL(u);
+          if (!n || isExcluded(n) || isMuxThumbnail(n)) continue;
+          if (allowByHostAndExt(n)) netFound.add(n);
+        }
+      }
+    } catch {}
   });
 
   console.log(`Navigating to ${COSMOS_URL}`);
   await page.goto(COSMOS_URL, { waitUntil: "domcontentloaded", timeout: 120000 });
   await page.waitForTimeout(FIRST_IDLE);
 
-  // Keyed storage so we can keep everything even if Cosmos virtualises DOM nodes
-  const itemsByKey = new Map(); // key -> item
-  const seenMuxThumbPlaybackIds = new Set();
+  // We keep positional captures from DOM (the only way to reproduce Cosmos ordering)
+  let positional = [];
+  const foundMap = new Map(); // src -> item (for late merges)
 
-  async function collectVisibleTiles() {
+  function mergeNetworkToMap() {
+    for (const u of netFound) {
+      if (!u || isExcluded(u) || isMuxThumbnail(u)) continue;
+      if (!allowByHostAndExt(u)) continue;
+      const isVideo = VIDEO_EXT_RE.test(new URL(u).pathname);
+      if (!foundMap.has(u)) foundMap.set(u, { type: isVideo ? "video" : "image", src: u });
+    }
+  }
+
+  async function collectFromDOM() {
     const batch = await page.evaluate(() => {
+      const out = [];
+
+      // Prefer a stable “main” area but don’t assume Cosmos internals
       const root =
         document.querySelector("main") ||
         document.querySelector("#__next") ||
         document.body;
 
-      function pickBestFromSrcset(img) {
+      const pickBestFromSrcset = (img) => {
         try {
           if (img.currentSrc) return img.currentSrc;
           const ss = img.getAttribute("srcset");
@@ -158,186 +220,211 @@ function upgradeMuxLowToHigh(urlStr) {
         } catch {
           return img.getAttribute("src") || "";
         }
-      }
+      };
 
-      // Find a stable “tile container” around a media element
-      function findTile(el) {
-        let node = el;
-        for (let i = 0; i < 8 && node && node.parentElement; i++) {
-          const r = node.getBoundingClientRect();
-          if (r.width >= 80 && r.height >= 80) {
-            const cs = getComputedStyle(node);
-            const looksLikeTile =
-              cs.position === "absolute" ||
-              cs.position === "relative" ||
-              (cs.transform && cs.transform !== "none") ||
-              node.tagName === "A";
-            if (looksLikeTile) return node;
-          }
-          node = node.parentElement;
-        }
-        return el.parentElement || el;
-      }
+      const bgUrl = (el) => {
+        try {
+          const bg = getComputedStyle(el).backgroundImage || "";
+          const m = bg.match(/url\((['"]?)(.*?)\1\)/i);
+          return m?.[2] || "";
+        } catch { return ""; }
+      };
 
-      const out = [];
-
-      // Prefer one record per tile container (not per media element)
-      const media = Array.from(root.querySelectorAll("img, video"));
-      const tileSet = new Set();
-
-      for (const m of media) {
-        const tile = findTile(m);
-        tileSet.add(tile);
-      }
-
-      for (const tile of tileSet) {
-        const rect = tile.getBoundingClientRect();
-        if (rect.width < 80 || rect.height < 80) continue;
-
-        // Choose best media inside the tile:
-        // 1) Mux/Cosmos mp4 from <video>/<source>
-        // 2) if none, image from <img>
-        let type = null;
-        let src = "";
-        let poster = "";
-
-        const vids = Array.from(tile.querySelectorAll("video"));
-        for (const v of vids) {
-          const s =
-            v.currentSrc ||
-            v.src ||
-            v.querySelector("source")?.src ||
-            "";
-          if (!s) continue;
-          type = "video";
-          src = s;
-          poster = v.poster || "";
-          // if we already have a mux stream, stop
-          if (/stream\.mux\.com/i.test(src)) break;
-        }
-
-        if (!src) {
-          const img = tile.querySelector("img");
-          if (img) {
-            type = "image";
-            src = pickBestFromSrcset(img) || img.src || "";
-          }
-        }
-
-        if (!src || !type) continue;
-
+      // 1) <img>
+      root.querySelectorAll("img").forEach(img => {
+        const rect = img.getBoundingClientRect();
+        const src = pickBestFromSrcset(img);
+        if (!src) return;
         out.push({
-          type,
+          type: "image",
           src,
-          poster: poster || null,
+          poster: null,
           top: rect.top + window.scrollY,
-          left: rect.left + window.scrollX,
-          w: Math.round(rect.width),
-          h: Math.round(rect.height)
+          left: rect.left + window.scrollX
         });
-      }
+      });
+
+      // 2) <video>
+      root.querySelectorAll("video").forEach(v => {
+        const rect = v.getBoundingClientRect();
+        const s = v.currentSrc || v.src || (v.querySelector("source")?.src) || "";
+        if (!s) return;
+        out.push({
+          type: "video",
+          src: s,
+          poster: v.poster || null,
+          top: rect.top + window.scrollY,
+          left: rect.left + window.scrollX
+        });
+      });
+
+      // 3) background-image tiles (Cosmos often uses these for stills)
+      // We only take “large enough” elements to avoid icons/sprites
+      root.querySelectorAll("*").forEach(el => {
+        const s = bgUrl(el);
+        if (!s) return;
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 120 || rect.height < 120) return;
+        out.push({
+          type: "image",
+          src: s,
+          poster: null,
+          top: rect.top + window.scrollY,
+          left: rect.left + window.scrollX
+        });
+      });
 
       return out;
     });
 
-    for (const raw of batch) {
-      let src = normaliseURL(raw.src);
-      if (!src || isExcludedUrl(src)) continue;
+    for (const it of batch) {
+      if (!it?.src) continue;
+      if (isExcluded(it.src)) continue;
 
-      // Ignore mux thumbnails as standalone items (these cause false duplicates)
-      const muxThumbId = muxPlaybackIdFromThumb(src);
-      if (muxThumbId) {
-        seenMuxThumbPlaybackIds.add(muxThumbId);
-        continue;
-      }
+      const norm0 = normaliseURL(it.src, COSMOS_URL);
+      if (!norm0) continue;
+      if (isExcluded(norm0) || isMuxThumbnail(norm0)) continue;
+      if (!allowByHostAndExt(norm0)) continue;
 
-      // Upgrade mux low->high
-      src = upgradeMuxLowToHigh(src);
+      const isVideo = VIDEO_EXT_RE.test(new URL(norm0).pathname);
+      positional.push({
+        type: isVideo ? "video" : "image",
+        src: norm0,
+        poster: it.poster ? normaliseURL(it.poster, COSMOS_URL) : null,
+        top: Number(it.top) || 0,
+        left: Number(it.left) || 0
+      });
 
-      const type =
-        raw.type ||
-        (VIDEO_EXT_RE.test(src) ? "video" : IMAGE_EXT_RE.test(src) ? "image" : "image");
-
-      // Keying:
-      // - mux videos dedupe by playbackId
-      // - everything else dedupe by type+src
-      let key = `${type}:${src}`;
-      if (type === "video") {
-        const pid = muxPlaybackIdFromStream(src);
-        if (pid) key = `video:mux:${pid}`;
-      }
-
-      // Keep the earliest (highest) in visual order by comparing top/left
-      const prev = itemsByKey.get(key);
-      const candidate = {
-        type,
-        src,
-        width: 0,
-        height: 0,
-        top: raw.top,
-        left: raw.left,
-        ...(raw.poster ? { poster: normaliseURL(raw.poster) } : {})
-      };
-
-      if (!prev) {
-        itemsByKey.set(key, candidate);
-      } else {
-        const prevRank = prev.top * 100000 + prev.left;
-        const candRank = candidate.top * 100000 + candidate.left;
-        if (candRank < prevRank) itemsByKey.set(key, candidate);
+      if (!foundMap.has(norm0)) {
+        foundMap.set(norm0, { type: isVideo ? "video" : "image", src: norm0, poster: null });
       }
     }
+
+    mergeNetworkToMap();
   }
 
   console.log("Scrolling + collecting…");
   let lastH = 0;
   let stable = 0;
-  let lastCount = 0;
-  let noNewCount = 0;
 
   for (let i = 0; i < MAX_SCROLLS; i++) {
-    await collectVisibleTiles();
+    await collectFromDOM();
 
-    const countNow = itemsByKey.size;
-    if (countNow === lastCount) noNewCount++;
-    else noNewCount = 0;
-    lastCount = countNow;
-
-    // Scroll
     const innerH = await page.evaluate(() => window.innerHeight);
-    await page.mouse.wheel(0, Math.floor(innerH * 0.92));
+    await page.mouse.wheel(0, Math.floor(innerH * 0.9));
     await page.waitForTimeout(WAIT_BETWEEN);
 
-    // Page growth stability (some Cosmos pages stop growing, some virtualise)
     const h = await page.evaluate(() => document.body.scrollHeight);
-    if (h === lastH) stable++;
-    else { stable = 0; lastH = h; }
-
-    if ((i + 1) % 10 === 0) {
-      console.log(`…scroll ${i + 1}, unique items: ${itemsByKey.size}, stable: ${stable}, noNew: ${noNewCount}`);
+    if (h === lastH) {
+      stable++;
+      if (stable >= STABLE_CHECKS) break;
+    } else {
+      stable = 0;
+      lastH = h;
     }
 
-    // Stop when both:
-    // - page height stable for a while
-    // - AND we’re not finding new items
-    if (stable >= STABLE_CHECKS && noNewCount >= STABLE_CHECKS) break;
+    if ((i + 1) % 10 === 0) {
+      console.log(`…scroll ${i + 1}, DOM items: ${positional.length}, net: ${netFound.size}`);
+    }
   }
 
-  // Final pass at bottom
-  await collectVisibleTiles();
-
+  await collectFromDOM();
   await browser.close();
 
-  // Visual order = top then left
-  const items = [...itemsByKey.values()]
-    .sort((a, b) => (a.top - b.top) || (a.left - b.left))
-    .map(({ top, left, ...rest }) => rest);
+  // Sort visually to match Cosmos grid order
+  positional.sort((a, b) => (a.top - b.top) || (a.left - b.left));
+
+  // Build ordered list, with better dedupe + mux upgrade + cosmos-mp4 drop
+  const hasAnyMux = positional.some(p => {
+    try { return new URL(p.src).host.toLowerCase() === MUX_STREAM_HOST; } catch { return false; }
+  });
+
+  const seen = new Set();
+  const ordered = [];
+
+  for (const it of positional) {
+    let src = it.src;
+
+    // Drop mux thumbnails (image.mux.com/.../thumbnail.png)
+    if (isMuxThumbnail(src)) continue;
+
+    // Upgrade mux mp4 quality
+    if (it.type === "video") {
+      src = upgradeMuxLowToHigh(src);
+    }
+
+    // If we have mux videos in this gallery, drop cosmos-hosted mp4 duplicates
+    if (it.type === "video" && hasAnyMux && isCosmosHostedMp4(src)) {
+      continue;
+    }
+
+    const norm = normaliseURL(src, COSMOS_URL);
+    if (!norm) continue;
+
+    // Keying
+    let key;
+    if (it.type === "video") {
+      const pid = muxPlaybackIdFromUrl(norm);
+      key = pid ? `video:mux:${pid}` : `video:url:${norm}`;
+    } else {
+      key = `image:url:${norm}`;
+    }
+
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const out = {
+      type: it.type,
+      src: norm,
+      width: 0,
+      height: 0
+    };
+
+    // Keep poster if present and not junk
+    if (it.poster) {
+      const p = normaliseURL(it.poster, COSMOS_URL);
+      if (p && !isExcluded(p) && !isMuxThumbnail(p)) out.poster = p;
+    }
+
+    ordered.push(out);
+  }
+
+  // Optional: append network-only items that never appeared on screen
+  // Keep after visible items so ordering stays correct.
+  for (const v of foundMap.values()) {
+    const src = v?.src;
+    if (!src) continue;
+    if (isExcluded(src) || isMuxThumbnail(src)) continue;
+    if (!allowByHostAndExt(src)) continue;
+
+    const type = v.type || (VIDEO_EXT_RE.test(new URL(src).pathname) ? "video" : "image");
+
+    let finalSrc = src;
+    if (type === "video") finalSrc = upgradeMuxLowToHigh(finalSrc);
+    if (type === "video" && hasAnyMux && isCosmosHostedMp4(finalSrc)) continue;
+
+    const norm = normaliseURL(finalSrc, COSMOS_URL);
+    if (!norm) continue;
+
+    let key;
+    if (type === "video") {
+      const pid = muxPlaybackIdFromUrl(norm);
+      key = pid ? `video:mux:${pid}` : `video:url:${norm}`;
+    } else {
+      key = `image:url:${norm}`;
+    }
+
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    ordered.push({ type, src: norm, width: 0, height: 0 });
+  }
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(
     OUT_FILE,
-    JSON.stringify({ ok: true, source: COSMOS_URL, count: items.length, items }, null, 2)
+    JSON.stringify({ ok: true, source: COSMOS_URL, count: ordered.length, items: ordered }, null, 2)
   );
 
-  console.log(`✅ Saved ${items.length} items → ${OUT_FILE}`);
+  console.log(`✅ Saved ${ordered.length} items → ${OUT_FILE}`);
 })();
