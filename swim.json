@@ -5,6 +5,12 @@
   "items": [
     {
       "type": "image",
+      "src": "https://cdn.cosmos.so/f3b74b03-ba19-4517-a178-88d083fe2435",
+      "width": 0,
+      "height": 0
+    },
+    {
+      "type": "image",
       "src": "https://cdn.cosmos.so/c482aacf-86ad-4eb9-a075-6a2dd7519de3",
       "width": 0,
       "height": 0
@@ -1053,12 +1059,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/8e6e581f-3795-466a-bfb4-c8e70d523e90",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/f3b74b03-ba19-4517-a178-88d083fe2435",
       "width": 0,
       "height": 0
     },
