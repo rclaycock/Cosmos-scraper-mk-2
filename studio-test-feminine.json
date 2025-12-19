@@ -1,7 +1,7 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/studio-test-feminine",
-  "count": 80,
+  "count": 78,
   "items": [
     {
       "type": "image",
@@ -468,19 +468,7 @@
     },
     {
       "type": "image",
-      "src": "https://stream.mux.com/sqpD02bk01eapsL00qInRTd9fpXx5RWEuZqampdSgCUPrU.m3u8",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/d4a1b253-db3d-4dfe-85ea-adc349df6ccc.",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://64.media.tumblr.com/e678f35334e0a138f1e8adb40c6dce10/d9ae986e48985354-2e/s640x960/2519443c6fb4bf59d051ba2e74a2080ef0ac8f8d.jpg",
       "width": 0,
       "height": 0
     }

@@ -1,7 +1,7 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/studio-tests",
-  "count": 126,
+  "count": 120,
   "items": [
     {
       "type": "image",
@@ -704,37 +704,13 @@
     },
     {
       "type": "image",
-      "src": "https://64.media.tumblr.com/f208d04fd452e9349768fd41db41d486/228f5a326f30b4e3-a1/s2048x3072/b836c20e6ea826342c4084022e40c61a03f10626.jpg",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://64.media.tumblr.com/599fa5314bc6e8de6d93bd3d29174ad7/66f6fb59b419395f-86/s640x960/2e4847723392175e278fa7e331ca543062800cbe.jpg",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/c3f43e78-1f45-4f0e-863e-4d59d9e3b432",
       "width": 0,
       "height": 0
     },
     {
       "type": "image",
-      "src": "https://stream.mux.com/uz1BO8o4mzt3ZQMj3Mrfdv02tSwbhvqYU164RZn00D4pA.m3u8",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/59a340b6-f20b-4882-80d1-758ba07ef2f7",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://stream.mux.com/e00qOJaI93dEL739Qy4wZ01oA3JMHaxkmCj701NeDdwW4Y.m3u8",
       "width": 0,
       "height": 0
     },
@@ -747,18 +723,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/3fffe3a9-3501-42a1-b92e-62ee4fefae1f",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://stream.mux.com/TV7OLmbCRdoW9kfq101NpUMeAotlpOuUX4cu23932FT8.m3u8",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://i.pinimg.com/originals/51/25/6a/51256a8b2419f2f20e3fbee2d4dfa185.jpg",
       "width": 0,
       "height": 0
     }
