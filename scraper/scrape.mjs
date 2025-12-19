@@ -22,6 +22,7 @@ const STABLE_CHECKS = Number(process.env.STABLE_CHECKS || 8);
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|avif|heic)(\?|$)/i;
 const VIDEO_EXT_RE = /\.(mp4|webm|m4v|mov)(\?|$)/i;
 const MEDIA_EXT_RE = /\.(jpe?g|png|webp|gif|avif|mp4|webm|m4v|mov|heic)(\?|$)/i;
+const M3U8_EXT_RE  = /\.m3u8(\?|$)/i;
 
 // Hosts
 const CDN_HOST_ALLOW = [
@@ -34,6 +35,12 @@ const CDN_HOST_ALLOW = [
   "googleusercontent"
 ];
 
+// Image host enforcement (only keep images hosted on cosmos.so)
+function isCosmosImageHost(hostname) {
+  const h = (hostname || "").toLowerCase();
+  return h === "cosmos.so" || h.endsWith(".cosmos.so");
+}
+
 // Exclusions
 function isExcluded(src) {
   return (
@@ -42,7 +49,8 @@ function isExcluded(src) {
     src.includes("default-avatars") ||
     src.includes("/_next/") ||
     src.includes("favicon") ||
-    src.includes("cosmos.so/api/avatar")
+    src.includes("cosmos.so/api/avatar") ||
+    M3U8_EXT_RE.test(src)
   );
 }
 
@@ -72,11 +80,31 @@ function normaliseURL(src, base = COSMOS_URL) {
   }
 }
 
-function allowByHostAndExt(urlStr) {
+/**
+ * Allow rule:
+ * - Always reject .m3u8
+ * - For images: only allow cosmos.so hosted images (cdn/files/anything *.cosmos.so)
+ * - For videos: keep existing allow behaviour (extension OR allowlisted host)
+ * - For unknown: keep existing allow behaviour (extension OR allowlisted host)
+ */
+function allowByHostAndExt(urlStr, typeHint = "unknown") {
   try {
     const u = new URL(urlStr);
+    const pathname = u.pathname || "";
+    if (M3U8_EXT_RE.test(pathname)) return false;
+
     const hostOk = CDN_HOST_ALLOW.some(h => u.host.toLowerCase().includes(h));
-    const extOk  = MEDIA_EXT_RE.test(u.pathname);
+    const extOk  = MEDIA_EXT_RE.test(pathname);
+
+    if (typeHint === "image") {
+      if (!IMAGE_EXT_RE.test(pathname)) return false;
+      return isCosmosImageHost(u.host);
+    }
+
+    if (typeHint === "video") {
+      return extOk || hostOk;
+    }
+
     return extOk || hostOk;
   } catch {
     return false;
@@ -158,8 +186,14 @@ function isCosmosHostedMp4(urlStr) {
       let norm = normaliseURL(url);
       if (!norm || isExcluded(norm) || isMuxThumbnail(norm)) return;
 
+      // Explicit drop for .m3u8
+      if (M3U8_EXT_RE.test(norm)) return;
+
       if (MEDIA_EXT_RE.test(norm)) {
-        netFound.add(norm);
+        const isImg = IMAGE_EXT_RE.test(new URL(norm).pathname);
+        const isVid = VIDEO_EXT_RE.test(new URL(norm).pathname);
+        const hint = isImg ? "image" : (isVid ? "video" : "unknown");
+        if (allowByHostAndExt(norm, hint)) netFound.add(norm);
         return;
       }
 
@@ -170,7 +204,19 @@ function isCosmosHostedMp4(urlStr) {
         for (const u of urls) {
           const n = normaliseURL(u);
           if (!n || isExcluded(n) || isMuxThumbnail(n)) continue;
-          if (allowByHostAndExt(n)) netFound.add(n);
+
+          // Explicit drop for .m3u8
+          if (M3U8_EXT_RE.test(n)) continue;
+
+          let hint = "unknown";
+          try {
+            const p = new URL(n).pathname || "";
+            if (IMAGE_EXT_RE.test(p)) hint = "image";
+            else if (VIDEO_EXT_RE.test(p)) hint = "video";
+            else if (M3U8_EXT_RE.test(p)) hint = "video";
+          } catch {}
+
+          if (allowByHostAndExt(n, hint)) netFound.add(n);
         }
       }
     } catch {}
@@ -187,8 +233,20 @@ function isCosmosHostedMp4(urlStr) {
   function mergeNetworkToMap() {
     for (const u of netFound) {
       if (!u || isExcluded(u) || isMuxThumbnail(u)) continue;
-      if (!allowByHostAndExt(u)) continue;
-      const isVideo = VIDEO_EXT_RE.test(new URL(u).pathname);
+      if (M3U8_EXT_RE.test(u)) continue;
+
+      let hint = "unknown";
+      try {
+        const p = new URL(u).pathname || "";
+        if (IMAGE_EXT_RE.test(p)) hint = "image";
+        else if (VIDEO_EXT_RE.test(p)) hint = "video";
+        else if (M3U8_EXT_RE.test(p)) hint = "video";
+      } catch {}
+
+      if (!allowByHostAndExt(u, hint)) continue;
+
+      let isVideo = false;
+      try { isVideo = VIDEO_EXT_RE.test(new URL(u).pathname); } catch {}
       if (!foundMap.has(u)) foundMap.set(u, { type: isVideo ? "video" : "image", src: u });
     }
   }
@@ -284,7 +342,17 @@ function isCosmosHostedMp4(urlStr) {
       const norm0 = normaliseURL(it.src, COSMOS_URL);
       if (!norm0) continue;
       if (isExcluded(norm0) || isMuxThumbnail(norm0)) continue;
-      if (!allowByHostAndExt(norm0)) continue;
+      if (M3U8_EXT_RE.test(norm0)) continue;
+
+      let hint = "unknown";
+      try {
+        const p = new URL(norm0).pathname || "";
+        if (IMAGE_EXT_RE.test(p)) hint = "image";
+        else if (VIDEO_EXT_RE.test(p)) hint = "video";
+        else if (M3U8_EXT_RE.test(p)) hint = "video";
+      } catch {}
+
+      if (!allowByHostAndExt(norm0, hint)) continue;
 
       const isVideo = VIDEO_EXT_RE.test(new URL(norm0).pathname);
       positional.push({
@@ -348,6 +416,15 @@ function isCosmosHostedMp4(urlStr) {
     // Drop mux thumbnails (image.mux.com/.../thumbnail.png)
     if (isMuxThumbnail(src)) continue;
 
+    // Drop .m3u8 always
+    if (M3U8_EXT_RE.test(src)) continue;
+
+    // Enforce cosmos-only images
+    try {
+      const u = new URL(src);
+      if (it.type === "image" && !isCosmosImageHost(u.host)) continue;
+    } catch {}
+
     // Upgrade mux mp4 quality
     if (it.type === "video") {
       src = upgradeMuxLowToHigh(src);
@@ -383,7 +460,7 @@ function isCosmosHostedMp4(urlStr) {
     // Keep poster if present and not junk
     if (it.poster) {
       const p = normaliseURL(it.poster, COSMOS_URL);
-      if (p && !isExcluded(p) && !isMuxThumbnail(p)) out.poster = p;
+      if (p && !isExcluded(p) && !isMuxThumbnail(p) && !M3U8_EXT_RE.test(p)) out.poster = p;
     }
 
     ordered.push(out);
@@ -395,13 +472,34 @@ function isCosmosHostedMp4(urlStr) {
     const src = v?.src;
     if (!src) continue;
     if (isExcluded(src) || isMuxThumbnail(src)) continue;
-    if (!allowByHostAndExt(src)) continue;
+    if (M3U8_EXT_RE.test(src)) continue;
+
+    let hint = "unknown";
+    try {
+      const p = new URL(src).pathname || "";
+      if (IMAGE_EXT_RE.test(p)) hint = "image";
+      else if (VIDEO_EXT_RE.test(p)) hint = "video";
+      else if (M3U8_EXT_RE.test(p)) hint = "video";
+    } catch {}
+
+    if (!allowByHostAndExt(src, hint)) continue;
 
     const type = v.type || (VIDEO_EXT_RE.test(new URL(src).pathname) ? "video" : "image");
+
+    // Enforce cosmos-only images
+    if (type === "image") {
+      try {
+        const u = new URL(src);
+        if (!isCosmosImageHost(u.host)) continue;
+      } catch {}
+    }
 
     let finalSrc = src;
     if (type === "video") finalSrc = upgradeMuxLowToHigh(finalSrc);
     if (type === "video" && hasAnyMux && isCosmosHostedMp4(finalSrc)) continue;
+
+    // Drop .m3u8 always
+    if (M3U8_EXT_RE.test(finalSrc)) continue;
 
     const norm = normaliseURL(finalSrc, COSMOS_URL);
     if (!norm) continue;
