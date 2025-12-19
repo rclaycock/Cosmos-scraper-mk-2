@@ -1,4 +1,4 @@
-name: Cosmos Gallery Scerapity
+name: Cosmos Gallery Scerapitydoo
 
 on:
   workflow_dispatch:
