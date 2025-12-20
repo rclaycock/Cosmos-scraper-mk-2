@@ -1,7 +1,7 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/swim",
-  "count": 184,
+  "count": 183,
   "items": [
     {
       "type": "image",
@@ -30,12 +30,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/8712be5e-03e8-463e-8097-0b39792b9376",
-      "width": 400,
-      "height": 500
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/e813c4d4-7c58-4cff-9848-d743a7501bfc",
       "width": 400,
       "height": 500
     },
