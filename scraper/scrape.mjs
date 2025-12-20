@@ -143,19 +143,7 @@ function muxPlaybackIdFromUrl(urlStr) {
 }
 
 function upgradeMuxLowToHigh(urlStr) {
-  try {
-    const u = new URL(urlStr);
-    if (u.host.toLowerCase() !== MUX_STREAM_HOST) return urlStr;
-    const seg = u.pathname.split("/").filter(Boolean);
-    if (!seg.length) return urlStr;
-    seg[1] = "high.mp4";
-    u.pathname = "/" + seg.join("/");
-    u.search = "";
-    u.hash = "";
-    return u.toString();
-  } catch {
-    return urlStr;
-  }
+  return urlStr; // keep low.mp4 as-is (no replacement)
 }
 
 function isCosmosHostedMp4(urlStr) {
