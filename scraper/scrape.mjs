@@ -73,17 +73,26 @@ function normaliseURL(src, base = COSMOS_URL) {
     const u = new URL(src, base);
     u.search = "";
     u.hash = "";
-    // keep protocol/host/path
     return `${u.protocol}//${u.host}${u.pathname}`;
   } catch {
     return null;
   }
 }
 
+function hasFileExtension(pathname) {
+  // True if last path segment contains ".ext"
+  try {
+    const last = (pathname || "").split("/").filter(Boolean).pop() || "";
+    return /\.[a-z0-9]{2,5}$/i.test(last);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Allow rule:
  * - Always reject .m3u8
- * - For images: only allow cosmos.so hosted images (cdn/files/anything *.cosmos.so)
+ * - For images: allow cosmos.so hosted images, including extensionless Cosmos URLs
  * - For videos: keep existing allow behaviour (extension OR allowlisted host)
  * - For unknown: keep existing allow behaviour (extension OR allowlisted host)
  */
@@ -97,8 +106,17 @@ function allowByHostAndExt(urlStr, typeHint = "unknown") {
     const extOk  = MEDIA_EXT_RE.test(pathname);
 
     if (typeHint === "image") {
-      if (!IMAGE_EXT_RE.test(pathname)) return false;
-      return isCosmosImageHost(u.host);
+      // Cosmos often serves AVIF with no extension (eg /<uuid>)
+      // Accept only cosmos hosted, reject obvious video/m3u8, and allow extensionless.
+      if (!isCosmosImageHost(u.host)) return false;
+      if (VIDEO_EXT_RE.test(pathname)) return false;
+      if (M3U8_EXT_RE.test(pathname)) return false;
+
+      if (IMAGE_EXT_RE.test(pathname)) return true;
+      // If no extension on the last segment, treat it as a Cosmos image.
+      if (!hasFileExtension(pathname)) return true;
+
+      return false;
     }
 
     if (typeHint === "video") {
@@ -130,7 +148,6 @@ function upgradeMuxLowToHigh(urlStr) {
     if (u.host.toLowerCase() !== MUX_STREAM_HOST) return urlStr;
     const seg = u.pathname.split("/").filter(Boolean);
     if (!seg.length) return urlStr;
-    // enforce high.mp4
     seg[1] = "high.mp4";
     u.pathname = "/" + seg.join("/");
     u.search = "";
@@ -150,6 +167,13 @@ function isCosmosHostedMp4(urlStr) {
   } catch {
     return false;
   }
+}
+
+function clampDim(n, fallback = 0) {
+  const x = Number(n) || 0;
+  if (!isFinite(x) || x <= 0) return fallback;
+  // avoid silly huge numbers from bad DOM states
+  return Math.min(Math.max(Math.floor(x), 1), 20000);
 }
 
 (async () => {
@@ -247,7 +271,7 @@ function isCosmosHostedMp4(urlStr) {
 
       let isVideo = false;
       try { isVideo = VIDEO_EXT_RE.test(new URL(u).pathname); } catch {}
-      if (!foundMap.has(u)) foundMap.set(u, { type: isVideo ? "video" : "image", src: u });
+      if (!foundMap.has(u)) foundMap.set(u, { type: isVideo ? "video" : "image", src: u, width: 0, height: 0 });
     }
   }
 
@@ -298,7 +322,9 @@ function isCosmosHostedMp4(urlStr) {
           src,
           poster: null,
           top: rect.top + window.scrollY,
-          left: rect.left + window.scrollX
+          left: rect.left + window.scrollX,
+          width: img.naturalWidth || 0,
+          height: img.naturalHeight || 0
         });
       });
 
@@ -312,12 +338,15 @@ function isCosmosHostedMp4(urlStr) {
           src: s,
           poster: v.poster || null,
           top: rect.top + window.scrollY,
-          left: rect.left + window.scrollX
+          left: rect.left + window.scrollX,
+          width: v.videoWidth || 0,
+          height: v.videoHeight || 0
         });
       });
 
       // 3) background-image tiles (Cosmos often uses these for stills)
       // We only take “large enough” elements to avoid icons/sprites
+      // Note: backgrounds rarely expose intrinsic pixel size, so we only store rendered size as a fallback.
       root.querySelectorAll("*").forEach(el => {
         const s = bgUrl(el);
         if (!s) return;
@@ -328,7 +357,9 @@ function isCosmosHostedMp4(urlStr) {
           src: s,
           poster: null,
           top: rect.top + window.scrollY,
-          left: rect.left + window.scrollX
+          left: rect.left + window.scrollX,
+          width: Math.round(rect.width) || 0,
+          height: Math.round(rect.height) || 0
         });
       });
 
@@ -350,7 +381,12 @@ function isCosmosHostedMp4(urlStr) {
         if (IMAGE_EXT_RE.test(p)) hint = "image";
         else if (VIDEO_EXT_RE.test(p)) hint = "video";
         else if (M3U8_EXT_RE.test(p)) hint = "video";
-      } catch {}
+        else if (it.type === "image") hint = "image";
+        else if (it.type === "video") hint = "video";
+      } catch {
+        if (it.type === "image") hint = "image";
+        if (it.type === "video") hint = "video";
+      }
 
       if (!allowByHostAndExt(norm0, hint)) continue;
 
@@ -360,11 +396,28 @@ function isCosmosHostedMp4(urlStr) {
         src: norm0,
         poster: it.poster ? normaliseURL(it.poster, COSMOS_URL) : null,
         top: Number(it.top) || 0,
-        left: Number(it.left) || 0
+        left: Number(it.left) || 0,
+        width: clampDim(it.width, 0),
+        height: clampDim(it.height, 0)
       });
 
       if (!foundMap.has(norm0)) {
-        foundMap.set(norm0, { type: isVideo ? "video" : "image", src: norm0, poster: null });
+        foundMap.set(norm0, {
+          type: isVideo ? "video" : "image",
+          src: norm0,
+          poster: null,
+          width: clampDim(it.width, 0),
+          height: clampDim(it.height, 0)
+        });
+      } else {
+        // If we captured dims later, keep the best (largest non-zero)
+        const existing = foundMap.get(norm0);
+        const nw = clampDim(it.width, 0);
+        const nh = clampDim(it.height, 0);
+        if (existing) {
+          if ((!existing.width || existing.width < nw) && nw) existing.width = nw;
+          if ((!existing.height || existing.height < nh) && nh) existing.height = nh;
+        }
       }
     }
 
@@ -453,8 +506,8 @@ function isCosmosHostedMp4(urlStr) {
     const out = {
       type: it.type,
       src: norm,
-      width: 0,
-      height: 0
+      width: clampDim(it.width, 0),
+      height: clampDim(it.height, 0)
     };
 
     // Keep poster if present and not junk
@@ -480,7 +533,12 @@ function isCosmosHostedMp4(urlStr) {
       if (IMAGE_EXT_RE.test(p)) hint = "image";
       else if (VIDEO_EXT_RE.test(p)) hint = "video";
       else if (M3U8_EXT_RE.test(p)) hint = "video";
-    } catch {}
+      else if (v.type === "image") hint = "image";
+      else if (v.type === "video") hint = "video";
+    } catch {
+      if (v.type === "image") hint = "image";
+      if (v.type === "video") hint = "video";
+    }
 
     if (!allowByHostAndExt(src, hint)) continue;
 
@@ -515,7 +573,12 @@ function isCosmosHostedMp4(urlStr) {
     if (seen.has(key)) continue;
     seen.add(key);
 
-    ordered.push({ type, src: norm, width: 0, height: 0 });
+    ordered.push({
+      type,
+      src: norm,
+      width: clampDim(v.width, 0),
+      height: clampDim(v.height, 0)
+    });
   }
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
