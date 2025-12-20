@@ -1,4 +1,4 @@
-name: Cosmos Gallery Scerapity0
+name: Cosmos Gallery Scerapity01
 
 on:
   workflow_dispatch:
@@ -62,7 +62,7 @@ jobs:
             echo "Scraping $u -> public/${slug}.json"
             COSMOS_URL="$u" OUT_FILE="public/${slug}.json" \
             MAX_SCROLLS="${MAX_SCROLLS}" WAIT_BETWEEN="${WAIT_BETWEEN}" FIRST_IDLE="${FIRST_IDLE}" STABLE_CHECKS="${STABLE_CHECKS}" \
-            node scraper/scraper.mjs
+            node scraper/scrape.mjs
           done
 
       - name: Commit + push updated JSON
