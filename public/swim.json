@@ -126,7 +126,7 @@
     },
     {
       "type": "video",
-      "src": "https://stream.mux.com/dznKWa96PZYqM01nkwSbtgLNya8iTJfMAiLLmnyjPTV00/high.mp4",
+      "src": "https://stream.mux.com/dznKWa96PZYqM01nkwSbtgLNya8iTJfMAiLLmnyjPTV00/low.mp4",
       "width": 0,
       "height": 0,
       "poster": "https://cdn.cosmos.so/f8d86c68-bf09-4252-ab02-ed0059980ee4"
@@ -259,7 +259,7 @@
     },
     {
       "type": "video",
-      "src": "https://stream.mux.com/7GzANFOfEN2Ax2soWR2NkPt4uRIwVo51Ilw1E45gUfw/high.mp4",
+      "src": "https://stream.mux.com/7GzANFOfEN2Ax2soWR2NkPt4uRIwVo51Ilw1E45gUfw/low.mp4",
       "width": 0,
       "height": 0,
       "poster": "https://cdn.cosmos.so/36afb63a-3572-4fe5-a662-6d2b7dc757ba"
@@ -1076,7 +1076,7 @@
     },
     {
       "type": "video",
-      "src": "https://stream.mux.com/kmvQ01YSuNtvxmhob8OMIfMLTLEDpSXpAE59ZOrZjwrI/high.mp4",
+      "src": "https://stream.mux.com/kmvQ01YSuNtvxmhob8OMIfMLTLEDpSXpAE59ZOrZjwrI/low.mp4",
       "width": 0,
       "height": 0
     },
