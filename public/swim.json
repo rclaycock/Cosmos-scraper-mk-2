@@ -1,13 +1,20 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/swim",
-  "count": 183,
+  "count": 184,
   "items": [
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/f3b74b03-ba19-4517-a178-88d083fe2435",
       "width": 180,
       "height": 225
+    },
+    {
+      "type": "video",
+      "src": "https://stream.mux.com/01bY0200XnXkfFyoktZFhTU00kPAFlzjWriur5DzHgVI5014/low.mp4",
+      "width": 0,
+      "height": 0,
+      "poster": "https://cdn.cosmos.so/b97fd75e-a3c1-42db-9ea2-f8e1c99faac0"
     },
     {
       "type": "image",
