@@ -1,4 +1,4 @@
-name: Cosmos Gallery Scrape Debug2
+name: Cosmos Gallery Debug 03
 
 on:
   workflow_dispatch:
@@ -63,7 +63,7 @@ jobs:
             slug=$(basename "$u")
 
             echo "============================================"
-            echo "Scraping $u"
+            echo "Scraping $u -> public/${slug}.json"
             echo "============================================"
 
             COSMOS_URL="$u" \
@@ -82,14 +82,23 @@ jobs:
 
             echo "Item count: $COUNT"
 
+            export SLUG="$slug"
+
             node <<'NODE'
 const fs = require("fs");
+
 try {
-  const j = JSON.parse(fs.readFileSync("public/${slug}.json", "utf8"));
-  (j.items || []).slice(0,10).forEach((it,i) => {
-    console.log(i+1, it.type, it.src);
+  const slug = process.env.SLUG || "";
+  const p = `public/${slug}.json`;
+  const j = JSON.parse(fs.readFileSync(p, "utf8"));
+
+  console.log("First 10 items:");
+  (j.items || []).slice(0, 10).forEach((it, i) => {
+    console.log(i + 1, it.type, it.src);
   });
-} catch {}
+} catch (e) {
+  console.log("Preview read failed:", e?.message || String(e));
+}
 NODE
 
             if [ "$COUNT" -le 2 ]; then
@@ -100,6 +109,9 @@ const fs = require("fs");
 const { chromium } = require("playwright");
 
 (async () => {
+  const slug = process.env.SLUG || "unknown";
+  const url = process.env.COSMOS_URL;
+
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     viewport: { width: 1600, height: 1000 },
@@ -112,12 +124,10 @@ const { chromium } = require("playwright");
 
   page.on("console", msg => logs.push(`[${msg.type()}] ${msg.text()}`));
   page.on("response", res => {
-    if (res.status() >= 400) {
-      failed.push({ status: res.status(), url: res.url() });
-    }
+    if (res.status() >= 400) failed.push({ status: res.status(), url: res.url() });
   });
 
-  await page.goto(process.env.COSMOS_URL, { waitUntil: "domcontentloaded", timeout: 120000 });
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 120000 });
   await page.waitForTimeout(8000);
 
   for (let i = 0; i < 6; i++) {
@@ -127,30 +137,33 @@ const { chromium } = require("playwright");
 
   const metrics = await page.evaluate(() => {
     const root = document.querySelector("main") || document.body;
+
     let bg = 0;
     root.querySelectorAll("*").forEach(el => {
       const b = getComputedStyle(el).backgroundImage;
       if (b && b.includes("url(")) bg++;
     });
 
+    const imgs = root.querySelectorAll("img");
+    const vids = root.querySelectorAll("video");
+
     return {
       readyState: document.readyState,
-      imgCount: root.querySelectorAll("img").length,
-      videoCount: root.querySelectorAll("video").length,
-      bgImageCount: bg
+      imgCount: imgs.length,
+      videoCount: vids.length,
+      bgImageCount: bg,
+      title: document.title || ""
     };
   });
 
-  fs.writeFileSync(`debug/${process.env.COSMOS_URL.split('/').pop()}-metrics.json`,
-    JSON.stringify({ metrics, failed }, null, 2)
+  fs.writeFileSync(
+    `debug/${slug}-metrics.json`,
+    JSON.stringify({ url, metrics, failed }, null, 2)
   );
 
-  fs.writeFileSync(`debug/${process.env.COSMOS_URL.split('/').pop()}-console.txt`, logs.join("\n"));
-  fs.writeFileSync(`debug/${process.env.COSMOS_URL.split('/').pop()}.html`, await page.content());
-  await page.screenshot({
-    path: `debug/${process.env.COSMOS_URL.split('/').pop()}.png`,
-    fullPage: true
-  });
+  fs.writeFileSync(`debug/${slug}-console.txt`, logs.join("\n"));
+  fs.writeFileSync(`debug/${slug}.html`, await page.content());
+  await page.screenshot({ path: `debug/${slug}.png`, fullPage: true });
 
   await browser.close();
 })();
