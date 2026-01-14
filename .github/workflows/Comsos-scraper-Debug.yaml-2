@@ -1,0 +1,182 @@
+name: Cosmos Gallery Scrape Debug2
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    env:
+      URLS: >
+        https://www.cosmos.so/rlphoto/swim,
+        https://www.cosmos.so/rlphoto/studio-tests,
+        https://www.cosmos.so/rlphoto/studio-test-feminine,
+        https://www.cosmos.so/rlphoto/swim-resort,
+        https://www.cosmos.so/rlphoto/location-tests
+      MAX_SCROLLS: 260
+      WAIT_BETWEEN: 900
+      FIRST_IDLE: 8000
+      STABLE_CHECKS: 8
+      PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ms-playwright-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Scrape all Cosmos pages
+        shell: bash
+        run: |
+          set -e
+          IFS=',' read -ra arr <<< "${URLS}"
+          mkdir -p public debug
+
+          for u in "${arr[@]}"; do
+            u=$(echo "$u" | xargs)
+            slug=$(basename "$u")
+
+            echo "============================================"
+            echo "Scraping $u"
+            echo "============================================"
+
+            COSMOS_URL="$u" \
+            OUT_FILE="public/${slug}.json" \
+            MAX_SCROLLS="${MAX_SCROLLS}" \
+            WAIT_BETWEEN="${WAIT_BETWEEN}" \
+            FIRST_IDLE="${FIRST_IDLE}" \
+            STABLE_CHECKS="${STABLE_CHECKS}" \
+            node scraper/scrape.mjs || true
+
+            if [ ! -f "public/${slug}.json" ]; then
+              COUNT=0
+            else
+              COUNT=$(node -e "const j=require('./public/${slug}.json'); console.log((j.items||[]).length)")
+            fi
+
+            echo "Item count: $COUNT"
+
+            node <<'NODE'
+const fs = require("fs");
+try {
+  const j = JSON.parse(fs.readFileSync("public/${slug}.json", "utf8"));
+  (j.items || []).slice(0,10).forEach((it,i) => {
+    console.log(i+1, it.type, it.src);
+  });
+} catch {}
+NODE
+
+            if [ "$COUNT" -le 2 ]; then
+              echo "Low item count detected, capturing debug"
+
+              node <<'NODE'
+const fs = require("fs");
+const { chromium } = require("playwright");
+
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    viewport: { width: 1600, height: 1000 },
+    deviceScaleFactor: 2
+  });
+
+  const page = await context.newPage();
+  const failed = [];
+  const logs = [];
+
+  page.on("console", msg => logs.push(`[${msg.type()}] ${msg.text()}`));
+  page.on("response", res => {
+    if (res.status() >= 400) {
+      failed.push({ status: res.status(), url: res.url() });
+    }
+  });
+
+  await page.goto(process.env.COSMOS_URL, { waitUntil: "domcontentloaded", timeout: 120000 });
+  await page.waitForTimeout(8000);
+
+  for (let i = 0; i < 6; i++) {
+    await page.mouse.wheel(0, 900);
+    await page.waitForTimeout(900);
+  }
+
+  const metrics = await page.evaluate(() => {
+    const root = document.querySelector("main") || document.body;
+    let bg = 0;
+    root.querySelectorAll("*").forEach(el => {
+      const b = getComputedStyle(el).backgroundImage;
+      if (b && b.includes("url(")) bg++;
+    });
+
+    return {
+      readyState: document.readyState,
+      imgCount: root.querySelectorAll("img").length,
+      videoCount: root.querySelectorAll("video").length,
+      bgImageCount: bg
+    };
+  });
+
+  fs.writeFileSync(`debug/${process.env.COSMOS_URL.split('/').pop()}-metrics.json`,
+    JSON.stringify({ metrics, failed }, null, 2)
+  );
+
+  fs.writeFileSync(`debug/${process.env.COSMOS_URL.split('/').pop()}-console.txt`, logs.join("\n"));
+  fs.writeFileSync(`debug/${process.env.COSMOS_URL.split('/').pop()}.html`, await page.content());
+  await page.screenshot({
+    path: `debug/${process.env.COSMOS_URL.split('/').pop()}.png`,
+    fullPage: true
+  });
+
+  await browser.close();
+})();
+NODE
+            fi
+          done
+
+      - name: Commit + push updated JSON
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/*.json
+          git diff --cached --quiet || git commit -m "Update Cosmos gallery JSON"
+          git push
+
+      - name: Upload debug artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmos-scrape-debug
+          path: |
+            debug/**
+            public/*.json
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: gh-pages
