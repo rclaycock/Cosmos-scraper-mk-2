@@ -1,13 +1,19 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/location-tests",
-  "count": 17,
+  "count": 18,
   "items": [
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/1977a5e4-e9be-49cd-8398-fcfc7d55a3c0",
       "width": 180,
       "height": 225
+    },
+    {
+      "type": "image",
+      "src": "https://cdn.cosmos.so/877658d5-7b14-4fdd-b2cb-0a1c83b5065e",
+      "width": 400,
+      "height": 533
     },
     {
       "type": "image",
