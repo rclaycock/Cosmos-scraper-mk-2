@@ -169,6 +169,43 @@ function clampDim(n, fallback = 0) {
   return Math.min(Math.max(Math.floor(x), 1), 20000);
 }
 
+async function waitForCosmosHydration(page, minTotal = 6, timeoutMs = 60000) {
+  await page.waitForFunction(
+    ({ minTotal }) => {
+      const root =
+        document.querySelector("main") ||
+        document.querySelector("#__next") ||
+        document.body;
+
+      const imgs = root.querySelectorAll("img").length;
+      const vids = root.querySelectorAll("video").length;
+
+      let bgMedia = 0;
+      root.querySelectorAll("*").forEach(el => {
+        const b = getComputedStyle(el).backgroundImage || "";
+        if (!b.includes("url(")) return;
+        if (b.includes("gradient(")) return;
+
+        const m = b.match(/url\((['"]?)(.*?)\1\)/i);
+        const u = m?.[2] || "";
+        if (!u) return;
+
+        // only count background urls that look like real media/CDN, not UI assets
+        if (
+          u.includes("cdn.cosmos.so") ||
+          u.includes("files.cosmos.so") ||
+          u.includes("image.mux.com") ||
+          u.includes("stream.mux.com")
+        ) bgMedia++;
+      });
+
+      return (imgs + vids + bgMedia) >= minTotal;
+    },
+    { minTotal },
+    { timeout: timeoutMs }
+  );
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: true });
 
@@ -469,39 +506,59 @@ function clampDim(n, fallback = 0) {
   }
 
   async function navigateAndMaybeRetry() {
-    console.log(`Navigating to ${COSMOS_URL}`);
-    await page.goto(COSMOS_URL, { waitUntil: "domcontentloaded", timeout: 120000 });
-    await page.waitForTimeout(FIRST_IDLE);
+  const retryIdle = Math.round(FIRST_IDLE * RETRY_IDLE_MULT);
 
-    // Quick sanity before we burn scroll time
-    const sig0 = await getHydrationSignals();
-    console.log(`Hydration signals (initial): total=${sig0.total} (img=${sig0.imgs}, video=${sig0.vids}, bg=${sig0.bg}) ready=${sig0.readyState}`);
+  for (let attempt = 0; attempt <= RETRY_MAX; attempt++) {
+    const label = attempt === 0 ? "initial" : `retry-${attempt}`;
+    const idle = attempt === 0 ? FIRST_IDLE : retryIdle;
 
-    await scrollCollectPass("initial");
-
-    // If Cosmos timed out or didn’t hydrate, do one reload retry.
-    const sig1 = await getHydrationSignals();
-    const lowDom = sig1.total < HYDRATION_MIN_MEDIA;
-    const zeroScrape = positional.length === 0;
-
-    if ((zeroScrape || lowDom) && RETRY_MAX > 0) {
-      console.log(`⚠️  Low/empty scrape detected (positional=${positional.length}, domTotal=${sig1.total}). Retrying with reload…`);
-
-      // Reset our collections so we don’t mix half-scrapes
+    if (attempt > 0) {
+      console.log(`♻️  Retry attempt ${attempt}: resetting collections`);
       resetCollections();
-
-      // Reload tends to work when Cosmos first load returns a 504 or stalls
-      await page.reload({ waitUntil: "domcontentloaded", timeout: 120000 });
-
-      const retryIdle = Math.round(FIRST_IDLE * RETRY_IDLE_MULT);
-      await page.waitForTimeout(retryIdle);
-
-      const sig2 = await getHydrationSignals();
-      console.log(`Hydration signals (retry): total=${sig2.total} (img=${sig2.imgs}, video=${sig2.vids}, bg=${sig2.bg})`);
-
-      await scrollCollectPass("retry");
     }
+
+    console.log(`Navigating to ${COSMOS_URL} (${label})`);
+
+    try {
+      await page.goto(COSMOS_URL, { waitUntil: "domcontentloaded", timeout: 120000 });
+    } catch (e) {
+      console.log(`⚠️  goto failed (${label}): ${String(e).slice(0, 200)}`);
+      if (attempt < RETRY_MAX) continue;
+      throw e;
+    }
+
+    await page.waitForTimeout(idle);
+
+    // Tiny nudge scroll, Cosmos sometimes only populates after first interaction
+    try {
+      await page.mouse.wheel(0, 800);
+      await page.waitForTimeout(1200);
+      await page.mouse.wheel(0, -200);
+      await page.waitForTimeout(800);
+    } catch {}
+
+    const sig = await getHydrationSignals();
+    console.log(`Hydration signals (${label} pre-gate): total=${sig.total} (img=${sig.imgs}, video=${sig.vids}, bg=${sig.bg}) ready=${sig.readyState}`);
+
+    // HARD GATE: do not start scraping until Cosmos is actually hydrated
+    try {
+      await waitForCosmosHydration(page, HYDRATION_MIN_MEDIA, 60000);
+      const sig2 = await getHydrationSignals();
+      console.log(`✅ Hydrated (${label}): total=${sig2.total} (img=${sig2.imgs}, video=${sig2.vids}, bg=${sig2.bg})`);
+    } catch {
+      console.log(`❌ Not hydrated within gate timeout (${label}).`);
+            if (attempt < RETRY_MAX) {
+        console.log("Retrying with a fresh navigation…");
+        continue;
+      }
+      // If we cannot hydrate even after retries, bail early
+     throw new Error("Cosmos did not hydrate in time");
+    }
+
+    await scrollCollectPass(label);
+    return;
   }
+}
 
   await navigateAndMaybeRetry();
   await browser.close();
