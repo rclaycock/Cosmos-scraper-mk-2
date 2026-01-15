@@ -1,4 +1,4 @@
-name: Cosmos Gallery Debug 5
+name: Cosmos Gallery Debug 6
 
 on:
   workflow_dispatch:
