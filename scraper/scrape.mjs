@@ -18,6 +18,11 @@ const WAIT_BETWEEN  = Number(process.env.WAIT_BETWEEN  || 900);
 const FIRST_IDLE    = Number(process.env.FIRST_IDLE    || 8000);
 const STABLE_CHECKS = Number(process.env.STABLE_CHECKS || 8);
 
+// Hydration / retry tunables (safe defaults)
+const HYDRATION_MIN_MEDIA = Number(process.env.HYDRATION_MIN_MEDIA || 6); // img + video + bg tiles
+const RETRY_IDLE_MULT     = Number(process.env.RETRY_IDLE_MULT     || 1.75);
+const RETRY_MAX           = Number(process.env.RETRY_MAX           || 1);
+
 // Media patterns
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|gif|avif|heic)(\?|$)/i;
 const VIDEO_EXT_RE = /\.(mp4|webm|m4v|mov)(\?|$)/i;
@@ -234,13 +239,15 @@ function clampDim(n, fallback = 0) {
     } catch {}
   });
 
-  console.log(`Navigating to ${COSMOS_URL}`);
-  await page.goto(COSMOS_URL, { waitUntil: "domcontentloaded", timeout: 120000 });
-  await page.waitForTimeout(FIRST_IDLE);
-
   // We keep positional captures from DOM (the only way to reproduce Cosmos ordering)
   let positional = [];
   const foundMap = new Map(); // src -> item (for late merges)
+
+  function resetCollections() {
+    positional = [];
+    netFound.clear();
+    foundMap.clear();
+  }
 
   function mergeNetworkToMap() {
     for (const u of netFound) {
@@ -412,32 +419,91 @@ function clampDim(n, fallback = 0) {
     mergeNetworkToMap();
   }
 
-  console.log("Scrolling + collecting…");
-  let lastH = 0;
-  let stable = 0;
+  async function getHydrationSignals() {
+    return await page.evaluate(() => {
+      const root =
+        document.querySelector("main") ||
+        document.querySelector("#__next") ||
+        document.body;
 
-  for (let i = 0; i < MAX_SCROLLS; i++) {
-    await collectFromDOM();
+      const imgs = root.querySelectorAll("img").length;
+      const vids = root.querySelectorAll("video").length;
 
-    const innerH = await page.evaluate(() => window.innerHeight);
-    await page.mouse.wheel(0, Math.floor(innerH * 0.9));
-    await page.waitForTimeout(WAIT_BETWEEN);
+      let bg = 0;
+      root.querySelectorAll("*").forEach(el => {
+        const b = getComputedStyle(el).backgroundImage;
+        if (b && b.includes("url(")) bg++;
+      });
 
-    const h = await page.evaluate(() => document.body.scrollHeight);
-    if (h === lastH) {
-      stable++;
-      if (stable >= STABLE_CHECKS) break;
-    } else {
-      stable = 0;
-      lastH = h;
+      return { imgs, vids, bg, total: imgs + vids + bg, readyState: document.readyState };
+    });
+  }
+
+  async function scrollCollectPass(label = "pass") {
+    console.log(`Scrolling + collecting (${label})…`);
+    let lastH = 0;
+    let stable = 0;
+
+    for (let i = 0; i < MAX_SCROLLS; i++) {
+      await collectFromDOM();
+
+      const innerH = await page.evaluate(() => window.innerHeight);
+      await page.mouse.wheel(0, Math.floor(innerH * 0.9));
+      await page.waitForTimeout(WAIT_BETWEEN);
+
+      const h = await page.evaluate(() => document.body.scrollHeight);
+      if (h === lastH) {
+        stable++;
+        if (stable >= STABLE_CHECKS) break;
+      } else {
+        stable = 0;
+        lastH = h;
+      }
+
+      if ((i + 1) % 10 === 0) {
+        console.log(`…scroll ${i + 1}, DOM items: ${positional.length}, net: ${netFound.size}`);
+      }
     }
 
-    if ((i + 1) % 10 === 0) {
-      console.log(`…scroll ${i + 1}, DOM items: ${positional.length}, net: ${netFound.size}`);
+    await collectFromDOM();
+  }
+
+  async function navigateAndMaybeRetry() {
+    console.log(`Navigating to ${COSMOS_URL}`);
+    await page.goto(COSMOS_URL, { waitUntil: "domcontentloaded", timeout: 120000 });
+    await page.waitForTimeout(FIRST_IDLE);
+
+    // Quick sanity before we burn scroll time
+    const sig0 = await getHydrationSignals();
+    console.log(`Hydration signals (initial): total=${sig0.total} (img=${sig0.imgs}, video=${sig0.vids}, bg=${sig0.bg}) ready=${sig0.readyState}`);
+
+    await scrollCollectPass("initial");
+
+    // If Cosmos timed out or didn’t hydrate, do one reload retry.
+    const sig1 = await getHydrationSignals();
+    const lowDom = sig1.total < HYDRATION_MIN_MEDIA;
+    const zeroScrape = positional.length === 0;
+
+    if ((zeroScrape || lowDom) && RETRY_MAX > 0) {
+      console.log(`⚠️  Low/empty scrape detected (positional=${positional.length}, domTotal=${sig1.total}). Retrying with reload…`);
+
+      // Reset our collections so we don’t mix half-scrapes
+      resetCollections();
+
+      // Reload tends to work when Cosmos first load returns a 504 or stalls
+      await page.reload({ waitUntil: "domcontentloaded", timeout: 120000 });
+
+      const retryIdle = Math.round(FIRST_IDLE * RETRY_IDLE_MULT);
+      await page.waitForTimeout(retryIdle);
+
+      const sig2 = await getHydrationSignals();
+      console.log(`Hydration signals (retry): total=${sig2.total} (img=${sig2.imgs}, video=${sig2.vids}, bg=${sig2.bg})`);
+
+      await scrollCollectPass("retry");
     }
   }
 
-  await collectFromDOM();
+  await navigateAndMaybeRetry();
   await browser.close();
 
   // Sort visually to match Cosmos grid order
@@ -466,7 +532,7 @@ function clampDim(n, fallback = 0) {
       if (it.type === "image" && !isCosmosImageHost(u.host)) continue;
     } catch {}
 
-    // Upgrade mux mp4 quality
+    // Upgrade mux mp4 quality (no-op currently)
     if (it.type === "video") {
       src = upgradeMuxLowToHigh(src);
     }
