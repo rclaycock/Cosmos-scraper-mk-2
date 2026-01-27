@@ -56,8 +56,8 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/f3b74b03-ba19-4517-a178-88d083fe2435",
-      "width": 180,
-      "height": 225
+      "width": 0,
+      "height": 0
     },
     {
       "type": "video",
@@ -311,8 +311,8 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/598e79cf-c00d-4c40-9415-62e10f716baf",
-      "width": 400,
-      "height": 495
+      "width": 0,
+      "height": 0
     },
     {
       "type": "image",
@@ -1007,8 +1007,8 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/59998189-b800-4ed4-beda-bc279e4a0afe",
-      "width": 400,
-      "height": 500
+      "width": 0,
+      "height": 0
     },
     {
       "type": "image",
