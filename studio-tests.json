@@ -1,8 +1,14 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/studio-tests",
-  "count": 124,
+  "count": 125,
   "items": [
+    {
+      "type": "image",
+      "src": "https://cdn.cosmos.so/bcfbb601-1b9e-416b-9a21-6854c63e57e2",
+      "width": 400,
+      "height": 500
+    },
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/e2b6484b-c6d8-4b69-9209-3979c7e32b49",
