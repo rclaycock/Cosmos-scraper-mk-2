@@ -1,7 +1,7 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/studio-test-feminine",
-  "count": 78,
+  "count": 77,
   "items": [
     {
       "type": "image",
@@ -74,12 +74,6 @@
       "src": "https://cdn.cosmos.so/aacf1b9f-7c8b-4296-9647-7eb8d2bfa58d",
       "width": 400,
       "height": 500
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/61754dbe-1752-4a6b-9724-f2ef7f17812e",
-      "width": 0,
-      "height": 0
     },
     {
       "type": "image",
