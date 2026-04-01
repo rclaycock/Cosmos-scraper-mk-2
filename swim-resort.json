@@ -124,14 +124,14 @@
       "height": 600
     },
     {
-      "type": "video",
-      "src": "https://cdn.sanity.io/files/ca81n2nu/production/a6cc82d75d824ae49ad989e7d18d3d3ec06ab431.mp4",
+      "type": "image",
+      "src": "https://cdn.cosmos.so/c966e743-50e6-49c5-94df-a9a7a61e3758",
       "width": 0,
       "height": 0
     },
     {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/c966e743-50e6-49c5-94df-a9a7a61e3758",
+      "type": "video",
+      "src": "https://cdn.sanity.io/files/ca81n2nu/production/a6cc82d75d824ae49ad989e7d18d3d3ec06ab431.mp4",
       "width": 0,
       "height": 0
     }
