@@ -618,8 +618,8 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/56654c48-4696-4982-9e17-09c8605f563d",
-      "width": 400,
-      "height": 500
+      "width": 0,
+      "height": 0
     },
     {
       "type": "image",
