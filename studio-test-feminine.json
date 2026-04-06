@@ -1,7 +1,7 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/studio-test-feminine",
-  "count": 117,
+  "count": 110,
   "items": [
     {
       "type": "image",
@@ -479,12 +479,6 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/3dfe5bee-b2f4-405e-a1fc-7533c817dac7",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/121585ca-311b-45f5-9a63-6f84fb129508",
       "width": 0,
       "height": 0
@@ -532,12 +526,6 @@
       "height": 0
     },
     {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/6e5265da-856f-4da3-86ee-19097c628672",
-      "width": 0,
-      "height": 0
-    },
-    {
       "type": "video",
       "src": "https://stream.mux.com/sqpD02bk01eapsL00qInRTd9fpXx5RWEuZqampdSgCUPrU/low.mp4",
       "width": 0,
@@ -569,19 +557,7 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/bb5e6e81-842c-40b3-9d6e-ded35c4982b5.",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/45cb3049-a6a7-4ceb-9e24-dc367752e711.",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/a06c5ed6-e2f3-43e7-9d2b-18eb20232be7",
       "width": 0,
       "height": 0
     },
@@ -653,12 +629,6 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/3df1c45f-a8e1-431f-9aa7-7c80f9a33357",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/8e588a2d-e7e8-4015-b231-62bbbb243dc8",
       "width": 0,
       "height": 0
@@ -689,19 +659,7 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/bbec4453-dd12-461c-bcf4-e3174fb8cb29",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/91f50530-e2ff-4606-8f22-990c7059d416",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/443c4b52-d6e4-4237-9771-4c3ae8eed64a",
       "width": 0,
       "height": 0
     }

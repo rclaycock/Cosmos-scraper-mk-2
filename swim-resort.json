@@ -1,7 +1,7 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/swim-resort",
-  "count": 71,
+  "count": 62,
   "items": [
     {
       "type": "image",
@@ -300,12 +300,6 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/e4d6452e-841c-495a-a664-32e4470840ca",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/79d2cd1d-011e-41a6-8f60-f6329b300d70",
       "width": 0,
       "height": 0
@@ -313,24 +307,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/2f3f611a-1fd9-4b0f-8891-d42c67dad993",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/1b06f077-a60d-4e8f-8059-f87c8acb5b31",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/32f01b3e-001c-4690-b824-65b53095173c",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/e928baa4-eb6d-4f4d-82e2-30e235801541.",
       "width": 0,
       "height": 0
     },
@@ -360,18 +336,6 @@
     },
     {
       "type": "image",
-      "src": "https://cdn.cosmos.so/c16013b8-a6ba-475d-800d-7a79ab02014d.jpg",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/c32954d1-bf42-401b-b38b-0f2397d57eed",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
       "src": "https://cdn.cosmos.so/fd28272d-08e4-494b-ba51-f9d04d77688c",
       "width": 0,
       "height": 0
@@ -379,18 +343,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/382257df-eb36-40d9-ab9e-5867576c5891",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/0e1d9416-b0b5-4d99-99c9-b9a94274ebbe",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/ef230612-06d9-4d16-936e-5f8f8ba39b04",
       "width": 0,
       "height": 0
     },
@@ -409,12 +361,6 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/b2250fb3-126b-4a74-9071-2289fd5f00a7",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/0ef80799-aa94-483e-9b7f-481c77ae3f37",
       "width": 0,
       "height": 0
     },
