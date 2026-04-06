@@ -192,8 +192,8 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/c004334b-60f6-43cf-8b86-e37a763231dd",
-      "width": 400,
-      "height": 500
+      "width": 0,
+      "height": 0
     },
     {
       "type": "image",
@@ -558,8 +558,8 @@
     {
       "type": "image",
       "src": "https://cdn.cosmos.so/a1451d6d-aae6-4f8e-ab19-7d01a09fb262",
-      "width": 0,
-      "height": 0
+      "width": 400,
+      "height": 501
     },
     {
       "type": "image",
