@@ -19,7 +19,7 @@ Edit `.github/workflows/Comsos-scraper-03.yaml`, update `URLS` (comma-separated)
 
 ## Tuning
 Adjust env vars in the workflow:
-- `MAX_SCROLLS`, `WAIT_BETWEEN`, `FIRST_IDLE`, `STABLE_CHECKS`, `INCLUDE_VIDEOS`.
+- `MAX_SCROLLS`, `WAIT_BETWEEN`, `FIRST_IDLE`, `STABLE_CHECKS`.
 
 ## Consume in 22Slides
 Use the JSON URL in your embed block’s `data-feed`.

@@ -17,7 +17,6 @@ const MAX_SCROLLS   = Number(process.env.MAX_SCROLLS   || 260);
 const WAIT_BETWEEN  = Number(process.env.WAIT_BETWEEN  || 900);
 const FIRST_IDLE    = Number(process.env.FIRST_IDLE    || 8000);
 const STABLE_CHECKS = Number(process.env.STABLE_CHECKS || 8);
-const INCLUDE_VIDEOS = /^(1|true|yes)$/i.test(process.env.INCLUDE_VIDEOS || "");
 
 // Hydration / retry tunables (safe defaults)
 const HYDRATION_MIN_MEDIA = Number(process.env.HYDRATION_MIN_MEDIA || 6); // img + video + bg tiles
@@ -163,6 +162,10 @@ function isCosmosHostedMp4(urlStr) {
   }
 }
 
+function isMuxVideo(urlStr) {
+  return !!muxPlaybackIdFromUrl(urlStr);
+}
+
 function clampDim(n, fallback = 0) {
   const x = Number(n) || 0;
   if (!isFinite(x) || x <= 0) return fallback;
@@ -271,7 +274,6 @@ async function waitForCosmosHydration(page, minTotal = 6, timeoutMs = 60000) {
             else if (M3U8_EXT_RE.test(p)) hint = "video";
           } catch {}
 
-          if (!INCLUDE_VIDEOS && hint === "video") continue;
           if (allowByHostAndExt(n, hint)) netFound.add(n);
         }
       }
@@ -301,12 +303,10 @@ async function waitForCosmosHydration(page, minTotal = 6, timeoutMs = 60000) {
         else if (M3U8_EXT_RE.test(p)) hint = "video";
       } catch {}
 
-      if (!INCLUDE_VIDEOS && hint === "video") continue;
       if (!allowByHostAndExt(u, hint)) continue;
 
       let isVideo = false;
       try { isVideo = VIDEO_EXT_RE.test(new URL(u).pathname); } catch {}
-      if (!INCLUDE_VIDEOS && isVideo) continue;
       if (!foundMap.has(u)) foundMap.set(u, { type: isVideo ? "video" : "image", src: u, width: 0, height: 0 });
     }
   }
@@ -424,11 +424,9 @@ async function waitForCosmosHydration(page, minTotal = 6, timeoutMs = 60000) {
         if (it.type === "video") hint = "video";
       }
 
-      if (!INCLUDE_VIDEOS && hint === "video") continue;
       if (!allowByHostAndExt(norm0, hint)) continue;
 
       const isVideo = VIDEO_EXT_RE.test(new URL(norm0).pathname);
-      if (!INCLUDE_VIDEOS && isVideo) continue;
       positional.push({
         type: isVideo ? "video" : "image",
         src: norm0,
@@ -572,17 +570,11 @@ async function waitForCosmosHydration(page, minTotal = 6, timeoutMs = 60000) {
   // Sort visually to match Cosmos grid order
   positional.sort((a, b) => (a.top - b.top) || (a.left - b.left));
 
-  // Build ordered list, with better dedupe + mux upgrade + cosmos-mp4 drop
-  const hasAnyMux = INCLUDE_VIDEOS && positional.some(p => {
-    try { return new URL(p.src).host.toLowerCase() === MUX_STREAM_HOST; } catch { return false; }
-  });
-
   const seen = new Set();
   const ordered = [];
 
   for (const it of positional) {
     let src = it.src;
-    if (!INCLUDE_VIDEOS && it.type === "video") continue;
 
     // Drop mux thumbnails (image.mux.com/.../thumbnail.png)
     if (isMuxThumbnail(src)) continue;
@@ -599,11 +591,6 @@ async function waitForCosmosHydration(page, minTotal = 6, timeoutMs = 60000) {
     // Upgrade mux mp4 quality (no-op currently)
     if (it.type === "video") {
       src = upgradeMuxLowToHigh(src);
-    }
-
-    // If we have mux videos in this gallery, drop cosmos-hosted mp4 duplicates
-    if (it.type === "video" && hasAnyMux && isCosmosHostedMp4(src)) {
-      continue;
     }
 
     const norm = normaliseURL(src, COSMOS_URL);
@@ -658,11 +645,9 @@ async function waitForCosmosHydration(page, minTotal = 6, timeoutMs = 60000) {
       if (v.type === "video") hint = "video";
     }
 
-    if (!INCLUDE_VIDEOS && hint === "video") continue;
     if (!allowByHostAndExt(src, hint)) continue;
 
     const type = v.type || (VIDEO_EXT_RE.test(new URL(src).pathname) ? "video" : "image");
-    if (!INCLUDE_VIDEOS && type === "video") continue;
 
     // Enforce cosmos-only images
     if (type === "image") {
@@ -674,7 +659,6 @@ async function waitForCosmosHydration(page, minTotal = 6, timeoutMs = 60000) {
 
     let finalSrc = src;
     if (type === "video") finalSrc = upgradeMuxLowToHigh(finalSrc);
-    if (type === "video" && hasAnyMux && isCosmosHostedMp4(finalSrc)) continue;
 
     // Drop .m3u8 always
     if (M3U8_EXT_RE.test(finalSrc)) continue;
@@ -701,11 +685,44 @@ async function waitForCosmosHydration(page, minTotal = 6, timeoutMs = 60000) {
     });
   }
 
+  const collapsed = [];
+  for (let i = 0; i < ordered.length; i++) {
+    const current = ordered[i];
+    const next = ordered[i + 1];
+    const nextNext = ordered[i + 2];
+
+    const currentIsCosmosVideo =
+      current?.type === "video" &&
+      isCosmosHostedMp4(current.src);
+
+    const nextIsMuxVideo =
+      next?.type === "video" &&
+      isMuxVideo(next.src);
+
+    const nextNextIsMuxVideo =
+      nextNext?.type === "video" &&
+      isMuxVideo(nextNext.src);
+
+    if (currentIsCosmosVideo && nextIsMuxVideo) {
+      collapsed.push(next);
+      i += 1;
+      continue;
+    }
+
+    if (currentIsCosmosVideo && next?.type === "image" && nextNextIsMuxVideo) {
+      collapsed.push(nextNext);
+      i += 2;
+      continue;
+    }
+
+    collapsed.push(current);
+  }
+
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(
     OUT_FILE,
-    JSON.stringify({ ok: true, source: COSMOS_URL, count: ordered.length, items: ordered }, null, 2)
+    JSON.stringify({ ok: true, source: COSMOS_URL, count: collapsed.length, items: collapsed }, null, 2)
   );
 
-  console.log(`✅ Saved ${ordered.length} items → ${OUT_FILE}`);
+  console.log(`✅ Saved ${collapsed.length} items → ${OUT_FILE}`);
 })();
