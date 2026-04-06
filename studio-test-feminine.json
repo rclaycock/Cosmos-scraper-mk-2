@@ -1,7 +1,7 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/studio-test-feminine",
-  "count": 123,
+  "count": 117,
   "items": [
     {
       "type": "image",
@@ -539,18 +539,6 @@
     },
     {
       "type": "video",
-      "src": "https://cdn.cosmos.so/3937f6d4-5f8b-41bb-a9e4-69e9224a0469.mp4",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/8acf8b32-a8ce-4f16-8b8a-76e96c20db8a",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "video",
       "src": "https://stream.mux.com/sqpD02bk01eapsL00qInRTd9fpXx5RWEuZqampdSgCUPrU/low.mp4",
       "width": 0,
       "height": 0
@@ -563,31 +551,7 @@
     },
     {
       "type": "video",
-      "src": "https://cdn.cosmos.so/c83b182a-d356-4df0-b800-9bfbe3e7b4dd.mp4",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/4be6a974-70f2-45c0-bfe4-aac7982b7cc1",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "video",
       "src": "https://stream.mux.com/SNwVOnUqnX502M7MCM701iw4A8e8WiAx45YAKYiRUY5fw/low.mp4",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "video",
-      "src": "https://cdn.cosmos.so/17d8e68c-68fd-4ac4-8b11-a0278e316928.mp4",
-      "width": 0,
-      "height": 0
-    },
-    {
-      "type": "image",
-      "src": "https://cdn.cosmos.so/97eb88b5-3930-4e27-b962-dd3d1a0645b5",
       "width": 0,
       "height": 0
     },
