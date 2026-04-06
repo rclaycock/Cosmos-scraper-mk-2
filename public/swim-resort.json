@@ -1,7 +1,7 @@
 {
   "ok": true,
   "source": "https://www.cosmos.so/rlphoto/swim-resort",
-  "count": 71,
+  "count": 70,
   "items": [
     {
       "type": "image",
@@ -164,13 +164,6 @@
       "src": "https://cdn.cosmos.so/35f1e5ce-27d1-460d-917b-8a1789424fb2.",
       "width": 400,
       "height": 320
-    },
-    {
-      "type": "video",
-      "src": "https://cdn.cosmos.so/096d5bf5-bd42-44f5-803e-60064d72d6d0.mp4",
-      "width": 0,
-      "height": 0,
-      "poster": "https://cdn.cosmos.so/dcb16ffd-d10d-47e9-8cca-ec0d6abd7839"
     },
     {
       "type": "image",

@@ -9,17 +9,17 @@ Scrapes one or more Cosmos gallery URLs and publishes JSON feeds to GitHub Pages
 4. Go to **Settings → Pages**:
    - Source: **Deploy from a branch**
    - Branch: **gh-pages** / **/** (root)
-5. Run a scrape: **Actions → “Cosmos Gallery → gallery.json” → Run workflow**.
+5. Run a scrape: **Actions → “Cosmos Gallery 03” → Run workflow**.
 
-JSON feeds appear at:https://.github.io/cosmos-scraper/.json
+JSON feeds appear at: `https://rclaycock.github.io/Cosmos-scraper-mk-2/<slug>.json`
 Where `<slug>` is the last segment of the Cosmos URL (e.g. `swim`, `studio-tests`, …).
 
 ## Change galleries
-Edit `.github/workflows/cosmos-gallery.yml`, update `URLS` (comma-separated), commit, run again.
+Edit `.github/workflows/Comsos-scraper-03.yaml`, update `URLS` (comma-separated), commit, run again.
 
 ## Tuning
 Adjust env vars in the workflow:
-- `MAX_SCROLLS`, `WAIT_BETWEEN`, `FIRST_IDLE`, `STABLE_CHECKS`.
+- `MAX_SCROLLS`, `WAIT_BETWEEN`, `FIRST_IDLE`, `STABLE_CHECKS`, `INCLUDE_VIDEOS`.
 
 ## Consume in 22Slides
 Use the JSON URL in your embed block’s `data-feed`.

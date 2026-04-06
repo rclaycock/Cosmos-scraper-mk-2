@@ -1,4 +1,4 @@
-name: Cosmos Gallery 02
+name: Cosmos Gallery 03
 
 on:
   workflow_dispatch:
@@ -22,6 +22,7 @@ jobs:
       WAIT_BETWEEN: 900
       FIRST_IDLE: 8000
       STABLE_CHECKS: 8
+      INCLUDE_VIDEOS: "false"
       PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
 
     steps:
