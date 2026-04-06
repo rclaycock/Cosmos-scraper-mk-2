@@ -173,6 +173,72 @@ function clampDim(n, fallback = 0) {
   return Math.min(Math.max(Math.floor(x), 1), 20000);
 }
 
+const JSON_MEDIA_CONTAINER_KEYS = new Set([
+  "media",
+  "multipleMedia",
+  "image",
+  "images",
+  "video",
+  "videos",
+  "poster",
+  "thumbnail",
+  "mux",
+  "asset",
+  "assets"
+]);
+
+const JSON_MEDIA_TYPE_NAMES = new Set([
+  "StaticImage",
+  "AnimatedImage",
+  "Video",
+  "MuxVideo",
+  "Thumbnail",
+  "Mux"
+]);
+
+function collectMediaUrlsFromJson(value, out = new Set(), path = []) {
+  if (!value) return out;
+
+  if (typeof value === "string") {
+    const parent = path[path.length - 1];
+    if (JSON_MEDIA_CONTAINER_KEYS.has(parent)) out.add(value);
+    return out;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectMediaUrlsFromJson(item, out, path));
+    return out;
+  }
+
+  if (typeof value !== "object") return out;
+
+  const pathHasMediaContainer = path.some((part) => JSON_MEDIA_CONTAINER_KEYS.has(part));
+  const typeName = typeof value.__typename === "string" ? value.__typename : "";
+
+  if (typeof value.url === "string" && (pathHasMediaContainer || JSON_MEDIA_TYPE_NAMES.has(typeName))) {
+    out.add(value.url);
+  }
+  if (typeof value.src === "string" && (pathHasMediaContainer || JSON_MEDIA_TYPE_NAMES.has(typeName))) {
+    out.add(value.src);
+  }
+  if (typeof value.poster === "string") {
+    out.add(value.poster);
+  }
+  if (typeof value.mp4Url === "string" && (pathHasMediaContainer || JSON_MEDIA_TYPE_NAMES.has(typeName))) {
+    out.add(value.mp4Url);
+  }
+  if (typeof value.playbackUrl === "string" && (pathHasMediaContainer || JSON_MEDIA_TYPE_NAMES.has(typeName))) {
+    out.add(value.playbackUrl);
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "url" || key === "src" || key === "poster" || key === "mp4Url" || key === "playbackUrl" || key === "__typename") continue;
+    collectMediaUrlsFromJson(child, out, [...path, key]);
+  }
+
+  return out;
+}
+
 async function waitForCosmosHydration(page, minTotal = 6, timeoutMs = 60000) {
   await page.waitForFunction(
     ({ minTotal }) => {
@@ -258,7 +324,12 @@ async function waitForCosmosHydration(page, minTotal = 6, timeoutMs = 60000) {
       const ct = (res.headers()["content-type"] || "").toLowerCase();
       if (ct.includes("application/json")) {
         const text = await res.text().catch(() => "");
-        const urls = text.match(/https?:\/\/[^\s"'\\)]+/g) || [];
+        let urls = [];
+        try {
+          urls = [...collectMediaUrlsFromJson(JSON.parse(text))];
+        } catch {
+          urls = text.match(/https?:\/\/[^\s"'\\)]+/g) || [];
+        }
         for (const u of urls) {
           const n = normaliseURL(u);
           if (!n || isExcluded(n) || isMuxThumbnail(n)) continue;
@@ -624,7 +695,7 @@ async function waitForCosmosHydration(page, minTotal = 6, timeoutMs = 60000) {
     ordered.push(out);
   }
 
-  // Optional: append network-only items that never appeared on screen
+  // Optional: append network-only items that never appeared on screen.
   // Keep after visible items so ordering stays correct.
   for (const v of foundMap.values()) {
     const src = v?.src;
