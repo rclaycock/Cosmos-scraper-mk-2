@@ -1,5 +1,8 @@
 # Cosmos scraper → JSON feeds
 
+Deprecated: this mk-2 repository no longer runs GitHub Actions workflows.
+Use `cosmos-scraper-mk-3` for the active Cosmos V2 scraper and live feed generation.
+
 Scrapes one or more Cosmos gallery URLs and publishes JSON feeds to GitHub Pages.
 
 ## Setup
